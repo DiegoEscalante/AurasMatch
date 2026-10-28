@@ -1,0 +1,62 @@
+# =========================
+# Root, OS & IDE Files
+# =========================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.log
+
+# =========================
+# Environment Variables
+# =========================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# =========================
+# Frontend (Next.js / Node)
+# =========================
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.swc/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+frontend/.pnp.*
+frontend/.eslintcache
+
+# =========================
+# Backend (Python / FastAPI)
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+backend/venv/
+backend/env/
+backend/.venv/
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+
+# =========================
+# Computer Vision / ML Assets
+# =========================
+# Ignore downloaded/exported models if they exceed Git size limits
+*.onnx
+*.tflite
+*.pb
+*.pt
+*.h5
+
+# =========================
+# Supabase / Local DB
+# =========================
+supabase/.temp/
+supabase/.branches/
