@@ -60,3 +60,5 @@ backend/htmlcov/
 # =========================
 supabase/.temp/
 supabase/.branches/
+
+.venv

@@ -1,0 +1,1 @@
+Generated the data in 'products' table in Supabase
