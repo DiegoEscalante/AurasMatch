@@ -1,24 +1,33 @@
+from pathlib import Path
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+
 class Settings(BaseSettings):
-    # Supabase Connection
-    supabase_url: str
-    supabase_service_role_key: str
+    """Application settings loaded from environment variables or backend/.env."""
 
-    # Cloudflare R2 Storage
-    r2_endpoint_url: str
-    r2_access_key_id: str
-    r2_secret_access_key: str
-    r2_bucket_name: str
+    # Supabase Connection (Service Role Key used to bypass RLS for backend writes)
+    supabase_url: str = Field(..., alias="SUPABASE_URL")
+    supabase_service_role_key: str = Field(..., alias="SUPABASE_SERVICE_ROLE_KEY")
 
-    # Vision-Language API
-    vision_api_key: str
-    
-    # Fast API Environment
-    environment: str = "development"
+    # Visual Decision Model API (e.g., Jev categorical classifier)
+    vision_api_key: str = Field(..., alias="VISION_API_KEY")
+    vision_api_url: str = Field(
+        default="https://api.jev.ai/v1/classify",
+        alias="VISION_API_URL",
+    )
 
-    # Instructs Pydantic to look for a .env file locally
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # FastAPI Environment
+    environment: str = Field(default="development", alias="ENVIRONMENT")
 
-# Instantiate a single global settings object to import elsewhere
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env",
+        env_file_encoding="utf-8",
+        populate_by_name=True,
+        extra="ignore",
+    )
+
+
 settings = Settings()
