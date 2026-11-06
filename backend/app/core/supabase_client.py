@@ -111,8 +111,9 @@ async def verify_supabase_jwt(token: str) -> str:
     return await asyncio.to_thread(_verify_supabase_jwt_sync, token)
 
 
+@lru_cache(maxsize=1)
 def load_product_catalog():
-    """Loads product catalog from Supabase (`id, category, cielab_l, cielab_a, cielab_b`)."""
+    """Loads and caches the product catalog from Supabase (`id, category, cielab_l, cielab_a, cielab_b`)."""
     supabase = get_supabase_client()
     res = supabase.table("products").select("id, category, cielab_l, cielab_a, cielab_b").execute()
     rows = res.data or []
