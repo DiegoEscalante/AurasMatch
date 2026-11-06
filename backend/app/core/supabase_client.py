@@ -97,6 +97,20 @@ def get_or_create_bot_user_id() -> str:
     return bot_id
 
 
+def _verify_supabase_jwt_sync(token: str) -> str:
+    """Validates a user's Supabase JWT access token and returns their verified user UUID."""
+    supabase = get_supabase_client()
+    user_resp = supabase.auth.get_user(token)
+    if user_resp is None or getattr(user_resp, "user", None) is None or not user_resp.user.id:
+        raise ValueError("Invalid or expired Supabase token.")
+    return str(user_resp.user.id)
+
+
+async def verify_supabase_jwt(token: str) -> str:
+    """Asynchronously validates a user's Supabase JWT access token and returns their UUID."""
+    return await asyncio.to_thread(_verify_supabase_jwt_sync, token)
+
+
 def load_product_catalog():
     """Loads product catalog from Supabase (`id, category, cielab_l, cielab_a, cielab_b`)."""
     supabase = get_supabase_client()

@@ -10,8 +10,8 @@ FastAPI computer vision, subculture classification, and cosmetic recommendation 
 
 ## Endpoints
 - `GET /health` — Health check endpoint.
-- `POST /analyze-look` — Analyzes a look from `image_url` (HTTP URL or R2 object path) or `image_base64`, matches SKUs, classifies subculture, runs the 3-Stage Hybrid Anti-AI Engine, and inserts into `looks`.
-- `POST /analyze-look/upload` — Accepts a binary or multipart image upload, uploads to R2, and runs the full analysis pipeline.
+- `POST /analyze-look` *(Requires `Authorization: Bearer <supabase_access_token>`)* — Analyzes a look from `image_url` (HTTP URL or R2 object path) or `image_base64`, matches SKUs, classifies subculture, runs the 3-Stage Hybrid Anti-AI Engine, and inserts into `looks` under the authenticated user's ID.
+- `POST /analyze-look/upload` *(Requires `Authorization: Bearer <supabase_access_token>`)* — Accepts a binary or multipart image upload, uploads to R2, and runs the full analysis pipeline under the authenticated user's ID.
 
 ## Local Development
 ```bash

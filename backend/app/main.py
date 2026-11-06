@@ -3,16 +3,18 @@ import base64
 from typing import Dict, List, Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
 from app.core.supabase_client import (
     download_image_bytes,
-    get_or_create_bot_user_id,
     insert_look_record,
     match_skus_for_regions,
     upload_jpeg_to_r2,
+    verify_supabase_jwt,
 )
 from app.cv.anti_ai import (
     compute_facial_microtexture_forensics,
@@ -29,10 +31,15 @@ from app.cv.mediapipe_cv import (
 )
 from app.cv.vision_api import classify_look_with_vision_model
 
+_is_production = settings.environment.strip().lower() == "production"
+
 app = FastAPI(
     title="AurasMatch AI Microservice",
     description="Computer Vision, Hybrid Anti-AI Verification, Subculture Classification & Cosmetic Recommendation Backend",
-    version="2.2.0",
+    version="2.3.0",
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
 )
 
 app.add_middleware(
@@ -43,17 +50,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_current_user_id(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> str:
+    """Verifies the caller's Supabase Auth JWT (`Authorization: Bearer <access_token>`) and returns their user UUID."""
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization Bearer token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        return await verify_supabase_jwt(credentials.credentials)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired Supabase authentication token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
 
 class LookUploadRequest(BaseModel):
     """Incoming payload from the client to analyze an uploaded or remote look image."""
 
-    user_id: Optional[str] = Field(
-        default=None,
-        description="UUID of the user uploading the look (defaults to system bot user if omitted)",
-    )
     image_url: Optional[str] = Field(
         default=None,
-        description="HTTP(S) URL or R2 object path (e.g. 'scraped_looks/uuid.jpg') of the look image",
+        description="HTTP(S) URL or R2 object path (e.g. 'user_looks/uuid.jpg') of the look image",
     )
     image_base64: Optional[str] = Field(
         default=None,
@@ -138,7 +163,6 @@ def _segment_extract_and_forensics_in_memory(
 
     try:
         regions_color = extract_all_regions_color_math(masked_regions)
-        # Pre-compute Stage 1 & Stage 2 forensics while img_rgb and landmarks are in memory
         meta_res = inspect_c2pa_and_metadata(raw_image_bytes)
         spectral_score = compute_spectral_forensics(img_rgb)
         facial_texture_score = compute_facial_microtexture_forensics(img_rgb, landmarks)
@@ -157,7 +181,7 @@ def _segment_extract_and_forensics_in_memory(
 
 async def _run_analysis_pipeline(
     raw_image_bytes: bytes,
-    user_id: Optional[str],
+    authenticated_user_id: str,
     image_path: Optional[str],
     should_upload_to_r2: bool,
     r2_folder: str,
@@ -204,9 +228,8 @@ async def _run_analysis_pipeline(
         vision_ai_score=jev_result.get("vision_ai_score"),
     )
 
-    # Step 4: Resolve user_id and R2 upload if requested
+    # Step 4: R2 upload if requested
     try:
-        resolved_user_id = user_id or await asyncio.to_thread(get_or_create_bot_user_id)
         if should_upload_to_r2 or not image_path:
             final_image_path = await upload_jpeg_to_r2(jpeg_bytes, folder=r2_folder)
         else:
@@ -214,13 +237,13 @@ async def _run_analysis_pipeline(
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to resolve user or upload image to R2: {exc}",
+            detail=f"Failed to upload image to R2: {exc}",
         ) from exc
 
-    # Step 5: Supabase INSERT into `looks` (saves both human-verified and AI-flagged looks so feed can filter & allow appeals)
+    # Step 5: Supabase INSERT into `looks` using verified authenticated_user_id
     try:
         look_id = await insert_look_record(
-            user_id=resolved_user_id,
+            user_id=authenticated_user_id,
             image_path=final_image_path,
             subculture=jev_result["subcultures"],
             is_human_verified=anti_ai_res["is_human_verified"],
@@ -267,8 +290,11 @@ async def health_check() -> dict:
     response_model=LookAnalysisResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def analyze_look(request: LookUploadRequest) -> LookAnalysisResponse:
-    """Executes the CV pipeline, Hybrid Anti-AI filter, SKU matching, and Jev classification, saving to Supabase."""
+async def analyze_look(
+    request: LookUploadRequest,
+    authenticated_user_id: str = Depends(get_current_user_id),
+) -> LookAnalysisResponse:
+    """Executes the CV pipeline, Hybrid Anti-AI filter, SKU matching, and Jev classification for an authenticated user."""
     if not request.image_url and not request.image_base64:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -292,7 +318,7 @@ async def analyze_look(request: LookUploadRequest) -> LookAnalysisResponse:
 
     return await _run_analysis_pipeline(
         raw_image_bytes=image_bytes,
-        user_id=request.user_id,
+        authenticated_user_id=authenticated_user_id,
         image_path=request.image_url,
         should_upload_to_r2=should_upload,
         r2_folder=request.r2_folder,
@@ -306,10 +332,10 @@ async def analyze_look(request: LookUploadRequest) -> LookAnalysisResponse:
 )
 async def analyze_uploaded_look(
     request: Request,
-    user_id: Optional[str] = Query(default=None, description="Optional user UUID"),
     r2_folder: str = Query(default="user_looks", description="Target R2 folder prefix"),
+    authenticated_user_id: str = Depends(get_current_user_id),
 ) -> LookAnalysisResponse:
-    """Accepts a raw image body or multipart form upload, uploads normalized JPEG to R2, runs CV + Anti-AI + Jev + SKU matching, and saves to Supabase."""
+    """Accepts a raw image body or multipart form upload from an authenticated user, uploads to R2, and analyzes."""
     content_type = request.headers.get("content-type", "")
     image_bytes: bytes = b""
 
@@ -318,8 +344,6 @@ async def analyze_uploaded_look(
         file_obj = form.get("file")
         if file_obj is not None and hasattr(file_obj, "read"):
             image_bytes = await file_obj.read()  # type: ignore[misc]
-        if not user_id and form.get("user_id"):
-            user_id = str(form.get("user_id"))
         if form.get("r2_folder"):
             r2_folder = str(form.get("r2_folder"))
     else:
@@ -333,7 +357,7 @@ async def analyze_uploaded_look(
 
     return await _run_analysis_pipeline(
         raw_image_bytes=image_bytes,
-        user_id=user_id,
+        authenticated_user_id=authenticated_user_id,
         image_path=None,
         should_upload_to_r2=True,
         r2_folder=r2_folder,
