@@ -1,18 +1,7 @@
 import math
 from typing import Dict, Optional, Tuple, TypedDict
 
-import cv2
 import numpy as np
-
-try:
-    from sklearn.cluster import KMeans
-except ImportError:
-    KMeans = None
-
-try:
-    from skimage.color import rgb2lab
-except ImportError:
-    rgb2lab = None
 
 
 class RegionColorFeatures(TypedDict):
@@ -75,28 +64,24 @@ def get_dominant_color_and_lab(
     img_rgb: np.ndarray,
     mask: np.ndarray,
 ) -> Tuple[Optional[str], Optional[np.ndarray]]:
-    """Extracts dominant color hex and CIELAB coordinates using the exact logic from images_scraper.py."""
-    masked_img = cv2.bitwise_and(img_rgb, img_rgb, mask=mask)
-    pixels = masked_img.reshape(-1, 3)
-    non_black_pixels = pixels[np.any(pixels != [0, 0, 0], axis=1)]
+    """Extracts dominant color hex and CIELAB coordinates matching images_scraper.py.
 
+    Note: For k=1 cluster (KMeans(n_clusters=1)), the cluster centroid is mathematically identical
+    to the arithmetic mean of the non-black masked pixels, with zero extra memory allocation.
+    """
+    masked_pixels = img_rgb[mask > 0]
+    if len(masked_pixels) == 0:
+        return None, None
+
+    non_black_pixels = masked_pixels[np.any(masked_pixels != 0, axis=1)]
     if len(non_black_pixels) == 0:
         return None, None
 
-    if KMeans is not None:
-        kmeans = KMeans(n_clusters=1, n_init=10).fit(non_black_pixels)
-        dominant_rgb = kmeans.cluster_centers_[0]
-    else:
-        dominant_rgb = np.mean(non_black_pixels, axis=0)
-
-    if rgb2lab is not None:
-        rgb_normalized = np.array([[dominant_rgb / 255.0]])
-        lab = rgb2lab(rgb_normalized)[0][0]
-    else:
-        lab = np.array(
-            rgb_to_cielab(dominant_rgb[0], dominant_rgb[1], dominant_rgb[2]),
-            dtype=np.float64,
-        )
+    dominant_rgb = np.mean(non_black_pixels, axis=0)
+    lab = np.array(
+        rgb_to_cielab(dominant_rgb[0], dominant_rgb[1], dominant_rgb[2]),
+        dtype=np.float64,
+    )
 
     return rgb_to_hex(dominant_rgb), lab
 

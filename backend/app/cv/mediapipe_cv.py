@@ -124,8 +124,15 @@ def build_exclusion_mask(
     return mask
 
 
-def decode_image_to_rgb_and_jpeg(image_bytes: bytes) -> Tuple[np.ndarray, np.ndarray, bytes]:
-    """Decodes raw image bytes into BGR, RGB numpy arrays, and normalized JPEG bytes."""
+def decode_image_to_rgb_and_jpeg(
+    image_bytes: bytes,
+    max_dimension: int = 1280,
+) -> Tuple[np.ndarray, np.ndarray, bytes]:
+    """Decodes raw image bytes into BGR, RGB numpy arrays, and normalized JPEG bytes.
+
+    Caps the maximum image dimension to `max_dimension` (1280px) to prevent 4K/8K photos
+    from exhausting Cloud Run container RAM while preserving full facial landmark & color accuracy.
+    """
     if not image_bytes:
         raise ValueError("Empty image bytes provided.")
 
@@ -134,7 +141,14 @@ def decode_image_to_rgb_and_jpeg(image_bytes: bytes) -> Tuple[np.ndarray, np.nda
     if img_bgr is None:
         raise ValueError("Could not decode image bytes into a valid OpenCV image.")
 
-    ok, jpeg_buf = cv2.imencode(".jpg", img_bgr)
+    h, w = img_bgr.shape[:2]
+    if max(h, w) > max_dimension:
+        scale = max_dimension / float(max(h, w))
+        new_w = max(1, int(round(w * scale)))
+        new_h = max(1, int(round(h * scale)))
+        img_bgr = cv2.resize(img_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    ok, jpeg_buf = cv2.imencode(".jpg", img_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     if not ok:
         raise ValueError("Could not encode image to JPEG format.")
 
