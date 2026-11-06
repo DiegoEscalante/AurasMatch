@@ -266,7 +266,14 @@ def _insert_look_record_sync(
         "extracted_regions": extracted_regions,
     }
 
-    response = client.table("looks").insert(db_record).execute()
+    try:
+        response = client.table("looks").insert(db_record).execute()
+    except Exception as exc:
+        if "subculture_confidence_score" in str(exc):
+            fallback_record = {k: v for k, v in db_record.items() if k != "subculture_confidence_score"}
+            response = client.table("looks").insert(fallback_record).execute()
+        else:
+            raise
     if not response.data or "id" not in response.data[0]:
         raise RuntimeError("Supabase INSERT into 'looks' table did not return a record ID.")
 
