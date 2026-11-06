@@ -1,10 +1,17 @@
-from typing import Dict, List
+import os
+import threading
+from pathlib import Path
+from typing import Dict, List, Tuple
 
 import cv2
 import mediapipe as mp
 import numpy as np
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 
-# 1. Lips: Outer lip contour minus inner mouth opening
+# ==========================================
+# MediaPipe Indices & Region Definitions
+# ==========================================
 LIP_OUTER_POLYGON: List[int] = [
     61, 146, 91, 181, 84, 17, 314, 405, 321, 375,
     291, 409, 270, 269, 267, 0, 37, 39, 40, 185,
@@ -13,12 +20,8 @@ LIP_INNER_POLYGON: List[int] = [
     78, 95, 88, 178, 87, 14, 317, 402, 318, 324,
     308, 415, 310, 311, 312, 13, 82, 81, 80, 191,
 ]
-
-# 2. Brows: Left and Right eyebrow contours
 LEFT_BROW_POLYGON: List[int] = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46]
 RIGHT_BROW_POLYGON: List[int] = [300, 293, 334, 296, 336, 285, 295, 282, 283, 276]
-
-# 3. Eyelids (Crease / Eyeshadow zone above upper lid fold, excluding sclera)
 LEFT_EYELID_CREASE_POLYGON: List[int] = [
     226, 247, 30, 29, 27, 28, 56, 190,
     243, 173, 157, 158, 159, 160, 161, 246,
@@ -27,8 +30,6 @@ RIGHT_EYELID_CREASE_POLYGON: List[int] = [
     463, 414, 286, 258, 257, 259, 260, 467,
     446, 466, 388, 387, 386, 385, 384, 398,
 ]
-
-# 4. Lash Line (Tight palpebral rim for eyeliner & mascara, with sclera/iris masked out)
 LEFT_EYE_SCLERA_POLYGON: List[int] = [
     33, 246, 161, 160, 159, 158, 157, 173,
     133, 155, 154, 153, 145, 144, 163, 7,
@@ -46,48 +47,85 @@ RIGHT_LASH_LINE_POLYGON: List[int] = [
     362, 463, 341, 256, 252, 253, 254, 339, 255, 359,
 ]
 
+REGION_DEFINITIONS: Dict[str, Dict[str, List[List[int]]]] = {
+    "lips": {"pos": [LIP_OUTER_POLYGON], "neg": [LIP_INNER_POLYGON]},
+    "brows": {"pos": [LEFT_BROW_POLYGON, RIGHT_BROW_POLYGON], "neg": []},
+    "eyelids": {"pos": [LEFT_EYELID_CREASE_POLYGON, RIGHT_EYELID_CREASE_POLYGON], "neg": []},
+    "lash_line": {
+        "pos": [LEFT_LASH_LINE_POLYGON, RIGHT_LASH_LINE_POLYGON],
+        "neg": [LEFT_EYE_SCLERA_POLYGON, RIGHT_EYE_SCLERA_POLYGON],
+    },
+}
 
-def _landmarks_to_points(landmarks, indices: List[int], img_w: int, img_h: int) -> np.ndarray:
-    """Maps normalized MediaPipe landmark indices to integer pixel coordinate arrays."""
-    return np.array(
-        [(int(landmarks[idx].x * img_w), int(landmarks[idx].y * img_h)) for idx in indices],
-        dtype=np.int32,
+_landmarker_lock = threading.Lock()
+_face_landmarker: vision.FaceLandmarker | None = None
+
+
+def _resolve_model_path() -> str:
+    """Resolves the path to face_landmarker.task inside backend or scripts directory."""
+    env_path = os.getenv("FACE_LANDMARKER_MODEL_PATH")
+    if env_path and os.path.isfile(env_path):
+        return env_path
+
+    cv_dir = Path(__file__).resolve().parent
+    candidates = [
+        cv_dir / "models" / "face_landmarker.task",
+        cv_dir.parents[1] / "models" / "face_landmarker.task",
+        cv_dir.parents[2] / "scripts" / "data_ingestion" / "models" / "face_landmarker.task",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+
+    raise FileNotFoundError(
+        f"Could not find 'face_landmarker.task'. Checked: {[str(c) for c in candidates]}"
     )
 
 
-def _apply_polygon_mask(
-    img_bgr: np.ndarray,
-    include_polygons: List[np.ndarray],
-    exclude_polygons: List[np.ndarray] | None = None,
+def get_face_landmarker() -> vision.FaceLandmarker:
+    """Initializes and returns the singleton MediaPipe FaceLandmarker instance."""
+    global _face_landmarker
+    if _face_landmarker is None:
+        model_path = _resolve_model_path()
+        base_options = python.BaseOptions(model_asset_path=model_path)
+        options = vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            running_mode=vision.RunningMode.IMAGE,
+            num_faces=1,
+        )
+        _face_landmarker = vision.FaceLandmarker.create_from_options(options)
+    return _face_landmarker
+
+
+def build_exclusion_mask(
+    img_shape: Tuple[int, ...],
+    landmarks,
+    pos_polygons: List[List[int]],
+    neg_polygons: List[List[int]],
 ) -> np.ndarray:
-    """Applies cv2.fillPoly and cv2.bitwise_and to isolate only target polygon pixels in-memory."""
-    h, w, _ = img_bgr.shape
+    """Draws white positive polygons, then overwrites exclusions with black."""
+    h, w = img_shape[:2]
     mask = np.zeros((h, w), dtype=np.uint8)
 
-    cv2.fillPoly(mask, include_polygons, 255)
-    if exclude_polygons:
-        cv2.fillPoly(mask, exclude_polygons, 0)
+    for poly in pos_polygons:
+        pts = np.array(
+            [(int(landmarks[i].x * w), int(landmarks[i].y * h)) for i in poly],
+            np.int32,
+        )
+        cv2.fillPoly(mask, [pts], 255)
 
-    # Tight bounding-box slice around non-zero mask pixels to minimize memory footprint
-    ys, xs = np.where(mask > 0)
-    if len(xs) == 0 or len(ys) == 0:
-        raise ValueError("Polygon mask produced zero active pixels for facial region.")
+    for poly in neg_polygons:
+        pts = np.array(
+            [(int(landmarks[i].x * w), int(landmarks[i].y * h)) for i in poly],
+            np.int32,
+        )
+        cv2.fillPoly(mask, [pts], 0)
 
-    x1, x2 = int(np.min(xs)), int(np.max(xs)) + 1
-    y1, y2 = int(np.min(ys)), int(np.max(ys)) + 1
-
-    roi_bgr = img_bgr[y1:y2, x1:x2]
-    roi_mask = mask[y1:y2, x1:x2]
-
-    return cv2.bitwise_and(roi_bgr, roi_bgr, mask=roi_mask)
+    return mask
 
 
-def extract_masked_facial_regions(image_bytes: bytes) -> Dict[str, np.ndarray]:
-    """Segments Lips, Brows, Eyelids (crease), and Lash Line in-memory using MediaPipe polygon masks.
-
-    Returns a dictionary mapping region names ('lips', 'brows', 'eyelids', 'lash_line')
-    to BGR numpy arrays where all non-target pixels are zeroed ([0, 0, 0]).
-    """
+def decode_image_to_rgb_and_jpeg(image_bytes: bytes) -> Tuple[np.ndarray, np.ndarray, bytes]:
+    """Decodes raw image bytes into BGR, RGB numpy arrays, and normalized JPEG bytes."""
     if not image_bytes:
         raise ValueError("Empty image bytes provided.")
 
@@ -96,72 +134,36 @@ def extract_masked_facial_regions(image_bytes: bytes) -> Dict[str, np.ndarray]:
     if img_bgr is None:
         raise ValueError("Could not decode image bytes into a valid OpenCV image.")
 
+    ok, jpeg_buf = cv2.imencode(".jpg", img_bgr)
+    if not ok:
+        raise ValueError("Could not encode image to JPEG format.")
+
+    jpeg_bytes = jpeg_buf.tobytes()
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    h, w, _ = img_bgr.shape
+    return img_bgr, img_rgb, jpeg_bytes
 
-    mp_solutions = getattr(mp, "solutions", None)
-    if mp_solutions is not None and hasattr(mp_solutions, "face_mesh"):
-        with mp_solutions.face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-        ) as face_mesh:
-            results = face_mesh.process(img_rgb)
-            if not results.multi_face_landmarks:
-                raise ValueError("No face detected in the provided image.")
 
-            lms = results.multi_face_landmarks[0].landmark
+def detect_face_landmarks(img_rgb: np.ndarray):
+    """Detects facial landmarks on an RGB image using MediaPipe Tasks FaceLandmarker."""
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
+    with _landmarker_lock:
+        landmarker = get_face_landmarker()
+        detection_result = landmarker.detect(mp_image)
 
-            # 1. Lips (Outer contour minus inner mouth opening)
-            lips_masked = _apply_polygon_mask(
-                img_bgr,
-                include_polygons=[_landmarks_to_points(lms, LIP_OUTER_POLYGON, w, h)],
-                exclude_polygons=[_landmarks_to_points(lms, LIP_INNER_POLYGON, w, h)],
-            )
+    if not detection_result.face_landmarks:
+        raise ValueError("No face detected in the provided image.")
 
-            # 2. Brows (Left + Right eyebrows)
-            brows_masked = _apply_polygon_mask(
-                img_bgr,
-                include_polygons=[
-                    _landmarks_to_points(lms, LEFT_BROW_POLYGON, w, h),
-                    _landmarks_to_points(lms, RIGHT_BROW_POLYGON, w, h),
-                ],
-            )
+    return detection_result.face_landmarks[0]
 
-            # 3. Eyelids / Crease (Left + Right upper eyelid fold, excluding sclera)
-            eyelids_masked = _apply_polygon_mask(
-                img_bgr,
-                include_polygons=[
-                    _landmarks_to_points(lms, LEFT_EYELID_CREASE_POLYGON, w, h),
-                    _landmarks_to_points(lms, RIGHT_EYELID_CREASE_POLYGON, w, h),
-                ],
-                exclude_polygons=[
-                    _landmarks_to_points(lms, LEFT_EYE_SCLERA_POLYGON, w, h),
-                    _landmarks_to_points(lms, RIGHT_EYE_SCLERA_POLYGON, w, h),
-                ],
-            )
 
-            # 4. Lash Line (Left + Right lash rims, explicitly masking out white sclera & iris)
-            lash_line_masked = _apply_polygon_mask(
-                img_bgr,
-                include_polygons=[
-                    _landmarks_to_points(lms, LEFT_LASH_LINE_POLYGON, w, h),
-                    _landmarks_to_points(lms, RIGHT_LASH_LINE_POLYGON, w, h),
-                ],
-                exclude_polygons=[
-                    _landmarks_to_points(lms, LEFT_EYE_SCLERA_POLYGON, w, h),
-                    _landmarks_to_points(lms, RIGHT_EYE_SCLERA_POLYGON, w, h),
-                ],
-            )
+def extract_masked_facial_regions(image_bytes: bytes) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
+    """Decodes image, runs FaceLandmarker, and returns (img_rgb, mask) per facial region."""
+    img_bgr, img_rgb, _ = decode_image_to_rgb_and_jpeg(image_bytes)
+    landmarks = detect_face_landmarks(img_rgb)
 
-            return {
-                "lips": lips_masked,
-                "brows": brows_masked,
-                "eyelids": eyelids_masked,
-                "lash_line": lash_line_masked,
-            }
+    regions: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+    for region, defs in REGION_DEFINITIONS.items():
+        mask = build_exclusion_mask(img_bgr.shape, landmarks, defs["pos"], defs["neg"])
+        regions[region] = (img_rgb, mask)
 
-    raise RuntimeError(
-        "MediaPipe FaceMesh (mp.solutions.face_mesh) is required for anatomical polygon masking."
-    )
+    return regions

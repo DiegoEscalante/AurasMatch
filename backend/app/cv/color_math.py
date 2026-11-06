@@ -1,5 +1,5 @@
 import math
-from typing import Dict, Tuple, TypedDict
+from typing import Dict, Optional, Tuple, TypedDict
 
 import cv2
 import numpy as np
@@ -9,25 +9,27 @@ try:
 except ImportError:
     KMeans = None
 
+try:
+    from skimage.color import rgb2lab
+except ImportError:
+    rgb2lab = None
+
 
 class RegionColorFeatures(TypedDict):
     dominant_hex: str
     cielab: Tuple[float, float, float]
 
 
-def rgb_to_hex(r: int, g: int, b: int) -> str:
-    """Formats an RGB triplet (0-255) into an uppercase hexadecimal color string."""
-    r_clamped = max(0, min(255, int(round(r))))
-    g_clamped = max(0, min(255, int(round(g))))
-    b_clamped = max(0, min(255, int(round(b))))
-    return f"#{r_clamped:02X}{g_clamped:02X}{b_clamped:02X}"
+def rgb_to_hex(rgb) -> str:
+    """Formats an RGB sequence (0-255) into a lowercase hexadecimal color string (#rrggbb)."""
+    return "#{:02x}{:02x}{:02x}".format(int(rgb[0]), int(rgb[1]), int(rgb[2]))
 
 
-def rgb_to_cielab(r: int, g: int, b: int) -> Tuple[float, float, float]:
-    """Converts sRGB (0-255) to CIELAB (L*, a*, b*) under D65 reference white."""
-    r_norm = max(0.0, min(1.0, r / 255.0))
-    g_norm = max(0.0, min(1.0, g / 255.0))
-    b_norm = max(0.0, min(1.0, b / 255.0))
+def rgb_to_cielab(r: float, g: float, b: float) -> Tuple[float, float, float]:
+    """Converts sRGB (0-255) to CIELAB (L*, a*, b*) under D65 reference white (matches skimage.color.rgb2lab)."""
+    r_norm = max(0.0, min(1.0, float(r) / 255.0))
+    g_norm = max(0.0, min(1.0, float(g) / 255.0))
+    b_norm = max(0.0, min(1.0, float(b) / 255.0))
 
     def gamma_correct(c: float) -> float:
         return ((c + 0.055) / 1.055) ** 2.4 if c > 0.04045 else c / 12.92
@@ -37,9 +39,9 @@ def rgb_to_cielab(r: int, g: int, b: int) -> Tuple[float, float, float]:
     b_lin = gamma_correct(b_norm)
 
     # sRGB to CIE XYZ (D65)
-    x = (r_lin * 0.4124 + g_lin * 0.3576 + b_lin * 0.1805) * 100.0
-    y = (r_lin * 0.2126 + g_lin * 0.7152 + b_lin * 0.0722) * 100.0
-    z = (r_lin * 0.0193 + g_lin * 0.1192 + b_lin * 0.9505) * 100.0
+    x = (r_lin * 0.4124564 + g_lin * 0.3575761 + b_lin * 0.1804375) * 100.0
+    y = (r_lin * 0.2126729 + g_lin * 0.7151522 + b_lin * 0.0721750) * 100.0
+    z = (r_lin * 0.0193339 + g_lin * 0.1191920 + b_lin * 0.9503041) * 100.0
 
     # Normalize by D65 Reference White
     x /= 95.047
@@ -55,81 +57,60 @@ def rgb_to_cielab(r: int, g: int, b: int) -> Tuple[float, float, float]:
     a_val = 500.0 * (fx - fy)
     b_val = 200.0 * (fy - fz)
 
-    return round(l_val, 3), round(a_val, 3), round(b_val, 3)
+    return float(l_val), float(a_val), float(b_val)
 
 
 def calculate_delta_e(
-    lab1: Tuple[float, float, float],
-    lab2: Tuple[float, float, float],
+    lab1: Tuple[float, float, float] | np.ndarray,
+    lab2: Tuple[float, float, float] | np.ndarray,
 ) -> float:
     """Computes the CIE76 Delta E Euclidean distance between two CIELAB colors."""
-    dl = lab1[0] - lab2[0]
-    da = lab1[1] - lab2[1]
-    db = lab1[2] - lab2[2]
+    dl = float(lab1[0]) - float(lab2[0])
+    da = float(lab1[1]) - float(lab2[1])
+    db = float(lab1[2]) - float(lab2[2])
     return math.sqrt(dl * dl + da * da + db * db)
 
 
-def extract_dominant_color_from_masked_region(
-    masked_bgr: np.ndarray,
-    n_clusters: int = 3,
-) -> RegionColorFeatures:
-    """Runs K-Means strictly on non-zero ([0, 0, 0] excluded) polygon-masked pixels."""
-    img_rgb = cv2.cvtColor(masked_bgr, cv2.COLOR_BGR2RGB)
-    flat_pixels = img_rgb.reshape(-1, 3)
+def get_dominant_color_and_lab(
+    img_rgb: np.ndarray,
+    mask: np.ndarray,
+) -> Tuple[Optional[str], Optional[np.ndarray]]:
+    """Extracts dominant color hex and CIELAB coordinates using the exact logic from images_scraper.py."""
+    masked_img = cv2.bitwise_and(img_rgb, img_rgb, mask=mask)
+    pixels = masked_img.reshape(-1, 3)
+    non_black_pixels = pixels[np.any(pixels != [0, 0, 0], axis=1)]
 
-    # Strictly ignore [0, 0, 0] mask background pixels
-    non_zero_mask = np.any(flat_pixels != 0, axis=1)
-    active_pixels = flat_pixels[non_zero_mask]
+    if len(non_black_pixels) == 0:
+        return None, None
 
-    if len(active_pixels) == 0:
-        raise ValueError("Masked facial region contains no non-zero pixels.")
-
-    # Downsample if necessary to keep K-Means fast
-    max_samples = 2500
-    if len(active_pixels) > max_samples:
-        rng = np.random.default_rng(42)
-        sample_idx = rng.choice(len(active_pixels), size=max_samples, replace=False)
-        sample_pixels = active_pixels[sample_idx].astype(np.float32)
+    if KMeans is not None:
+        kmeans = KMeans(n_clusters=1, n_init=10).fit(non_black_pixels)
+        dominant_rgb = kmeans.cluster_centers_[0]
     else:
-        sample_pixels = active_pixels.astype(np.float32)
+        dominant_rgb = np.mean(non_black_pixels, axis=0)
 
-    k = min(n_clusters, len(sample_pixels))
-    if k <= 1:
-        mean_rgb = np.mean(sample_pixels, axis=0)
-        r, g, b = int(round(mean_rgb[0])), int(round(mean_rgb[1])), int(round(mean_rgb[2]))
-    elif KMeans is not None:
-        kmeans = KMeans(n_clusters=k, n_init=5, random_state=42)
-        labels = kmeans.fit_predict(sample_pixels)
-        counts = np.bincount(labels)
-        dominant_idx = int(np.argmax(counts))
-        center = kmeans.cluster_centers_[dominant_idx]
-        r, g, b = int(round(center[0])), int(round(center[1])), int(round(center[2]))
+    if rgb2lab is not None:
+        rgb_normalized = np.array([[dominant_rgb / 255.0]])
+        lab = rgb2lab(rgb_normalized)[0][0]
     else:
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)
-        _, labels, centers = cv2.kmeans(
-            sample_pixels,
-            k,
-            None,
-            criteria,
-            5,
-            cv2.KMEANS_PP_CENTERS,
+        lab = np.array(
+            rgb_to_cielab(dominant_rgb[0], dominant_rgb[1], dominant_rgb[2]),
+            dtype=np.float64,
         )
-        counts = np.bincount(labels.flatten())
-        dominant_idx = int(np.argmax(counts))
-        center = centers[dominant_idx]
-        r, g, b = int(round(center[0])), int(round(center[1])), int(round(center[2]))
 
-    return {
-        "dominant_hex": rgb_to_hex(r, g, b),
-        "cielab": rgb_to_cielab(r, g, b),
-    }
+    return rgb_to_hex(dominant_rgb), lab
 
 
 def extract_all_regions_color_math(
-    masked_regions: Dict[str, np.ndarray],
+    masked_regions: Dict[str, Tuple[np.ndarray, np.ndarray]],
 ) -> Dict[str, RegionColorFeatures]:
-    """Extracts dominant Hex and CIELAB coordinates for all four masked anatomical regions."""
-    return {
-        region_name: extract_dominant_color_from_masked_region(masked_bgr)
-        for region_name, masked_bgr in masked_regions.items()
-    }
+    """Extracts dominant Hex and CIELAB coordinates for all masked anatomical regions."""
+    results: Dict[str, RegionColorFeatures] = {}
+    for region_name, (img_rgb, mask) in masked_regions.items():
+        hex_val, lab_coords = get_dominant_color_and_lab(img_rgb, mask)
+        if hex_val is not None and lab_coords is not None:
+            results[region_name] = {
+                "dominant_hex": hex_val,
+                "cielab": (float(lab_coords[0]), float(lab_coords[1]), float(lab_coords[2])),
+            }
+    return results

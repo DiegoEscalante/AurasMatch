@@ -11,7 +11,10 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+if not SUPABASE_KEY or not SUPABASE_URL:
+    raise ValueError("Environment variables for Supabase are not set.")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) 
 
 MAKEUP_API_URL = "http://makeup-api.herokuapp.com/api/v1/products.json"
 

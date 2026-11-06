@@ -1,4 +1,5 @@
-from typing import Literal, TypedDict
+import base64
+from typing import Dict, List, Literal, Optional, TypedDict
 
 import httpx
 
@@ -10,62 +11,136 @@ AestheticSubculture = Literal[
     "Goth",
     "E-Girl",
     "Y2K",
-    "Uncategorized",
+    "Other",
 ]
 
-AESTHETIC_SUBCULTURE_LABELS: list[str] = [
-    "Jirai Kei",
-    "Clean Girl",
-    "Goth",
-    "E-Girl",
-    "Y2K",
-    "Uncategorized",
-]
+SUBCULTURE_TARGETS: List[str] = ["Jirai Kei", "Clean Girl", "Goth", "E-Girl", "Y2K"]
 
 
-class VisualDecisionResult(TypedDict):
-    subculture: AestheticSubculture
-    is_human_verified: bool
-    ai_confidence_score: float
+class JevClassificationResult(TypedDict):
+    choice: str
+    subcultures: List[str]
+    tags: List[str]
+    score: float  # Kept as alias for subculture_confidence_score
+    subculture_confidence_score: float
+    vision_ai_score: Optional[float]
+    probabilities: Dict[str, float]
 
 
-async def classify_look_with_vision_model(image_url: str) -> VisualDecisionResult:
-    """Queries the categorical Visual Decision Model (e.g., Jev) for subculture enum & anti-AI score."""
-    headers = {
-        "Authorization": f"Bearer {settings.vision_api_key}",
-        "Content-Type": "application/json",
-    }
-
+def _build_jev_payload_and_headers(image_bytes: bytes) -> tuple[dict, dict]:
+    b64_image = base64.b64encode(image_bytes).decode("utf-8")
     payload = {
-        "image_url": image_url,
-        "candidate_labels": AESTHETIC_SUBCULTURE_LABELS,
-        "detect_synthetic": True,
+        "model": "jev-latest",
+        "state": {
+            "photo": "look-photo",
+        },
+        "assets": {
+            "look-photo": {
+                "type": "image",
+                "format": "jpeg",
+                "data_base64": b64_image,
+            }
+        },
+        "questions": {
+            "choice": {
+                "type": "choice",
+                "instructions": (
+                    "Identify the fashion aesthetic that best describes the person's visible aesthetic. "
+                    "Use your existing knowledge of fashion, alternative fashion, internet aesthetics and "
+                    "fashion subcultures. Interpret each option according to its commonly recognized meaning. "
+                    "Do not rely on the name alone if the visual characteristics do not match. "
+                    "Choose Other if none is a convincing match."
+                ),
+                "criteria": {
+                    "Jirai Kei": "Jirai Kei",
+                    "Clean Girl": "Clean Girl",
+                    "E-girl": "E-girl",
+                    "Y2K": "Y2K",
+                    "Goth": "Goth",
+                    "Other": "None of these adequately describes the aesthethic.",
+                },
+            },
+            "ai_detection": {
+                "type": "choice",
+                "instructions": (
+                    "Determine whether this portrait is an authentic photograph of a real human or "
+                    "synthetic/AI-generated content (such as Midjourney, Stable Diffusion, Flux, DALL-E, "
+                    "CGI, or heavy AI face synthesis). Inspect skin micro-texture, iris/pupil geometry, "
+                    "hair strand coherence, lighting physics, and background artifacts. "
+                    "Do not misclassify real humans who simply have soft lighting or makeup as AI."
+                ),
+                "criteria": {
+                    "Real_Human": "An authentic photograph of a real human being.",
+                    "AI_Generated": "A synthetic, AI-generated, or heavily AI-synthesized image.",
+                },
+            },
+        },
     }
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        response = await client.post(
-            settings.vision_api_url,
-            headers=headers,
-            json=payload,
-        )
-        response.raise_for_status()
-        data = response.json()
+    headers = {
+        "Authorization": f"Bearer {settings.jev_api_key}",
+        "Content-Type": "application/json",
+        "TypeSafe-Danger-Zone-Images": "true",
+    }
+    return payload, headers
 
-    raw_label = str(data.get("subculture") or data.get("label") or "Uncategorized").strip()
-    subculture: AestheticSubculture = (
-        raw_label if raw_label in AESTHETIC_SUBCULTURE_LABELS else "Uncategorized"  # type: ignore[assignment]
+
+def _parse_jev_response(data: dict) -> JevClassificationResult:
+    answers = data.get("answers", {})
+
+    # 1. Subculture classification answer
+    choice_ans = answers.get("choice", {})
+    selected_choice = choice_ans.get("choice", "Other")
+    probabilities = choice_ans.get("probabilities", {})
+    subculture_confidence = float(
+        choice_ans.get("confidence", probabilities.get(selected_choice, 0.0))
     )
 
-    raw_ai_score = float(data.get("ai_confidence_score", data.get("synthetic_probability", 0.0)))
-    ai_confidence_score = round(max(0.0, min(1.0, raw_ai_score)), 4)
+    # Map "E-girl" to "E-Girl" if the Postgres aesthetic_subculture enum uses "E-Girl"
+    enum_choice = "E-Girl" if selected_choice == "E-girl" else selected_choice
 
-    if "is_human_verified" in data and isinstance(data["is_human_verified"], bool):
-        is_human_verified = data["is_human_verified"]
-    else:
-        is_human_verified = ai_confidence_score < 0.5
+    # 2. Semantic AI / Synthetic detection answer
+    ai_ans = answers.get("ai_detection", {})
+    vision_ai_score: Optional[float] = None
+    if ai_ans:
+        ai_probs = ai_ans.get("probabilities", {})
+        if "AI_Generated" in ai_probs:
+            vision_ai_score = float(ai_probs["AI_Generated"])
+        elif "Real_Human" in ai_probs:
+            vision_ai_score = 1.0 - float(ai_probs["Real_Human"])
+        else:
+            ai_choice = ai_ans.get("choice")
+            ai_conf = float(ai_ans.get("confidence", 0.5))
+            if ai_choice == "AI_Generated":
+                vision_ai_score = ai_conf
+            elif ai_choice == "Real_Human":
+                vision_ai_score = 1.0 - ai_conf
 
     return {
-        "subculture": subculture,
-        "is_human_verified": is_human_verified,
-        "ai_confidence_score": ai_confidence_score,
+        "choice": enum_choice,
+        "subcultures": [enum_choice] if enum_choice and enum_choice != "Other" else [],
+        "tags": [],
+        "score": round(subculture_confidence, 4),
+        "subculture_confidence_score": round(subculture_confidence, 4),
+        "vision_ai_score": round(vision_ai_score, 4) if vision_ai_score is not None else None,
+        "probabilities": probabilities,
     }
+
+
+def call_jev_model(image_bytes: bytes) -> JevClassificationResult:
+    """Synchronous Jev classification + AI detection."""
+    payload, headers = _build_jev_payload_and_headers(image_bytes)
+    resp = httpx.post(settings.jev_api_url, json=payload, headers=headers, timeout=30.0)
+    if resp.is_error:
+        raise RuntimeError(f"Jev API {resp.status_code}: {resp.text}")
+    return _parse_jev_response(resp.json())
+
+
+async def classify_look_with_vision_model(image_bytes: bytes) -> JevClassificationResult:
+    """Asynchronous Jev classification + AI detection."""
+    payload, headers = _build_jev_payload_and_headers(image_bytes)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(settings.jev_api_url, json=payload, headers=headers)
+        if resp.is_error:
+            raise RuntimeError(f"Jev API {resp.status_code}: {resp.text}")
+        return _parse_jev_response(resp.json())
