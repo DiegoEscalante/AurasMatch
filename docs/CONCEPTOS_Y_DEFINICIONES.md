@@ -124,3 +124,23 @@ $$\text{Ratio de Contraste} = \frac{L_{\text{más claro}} + 0.05}{L_{\text{más 
 ### 19. Sesiones Persistentes sin Expiración Abrupta (`2ndPhaseProposal.pdf` Sección V.A.5)
 * **¿Por qué es un requisito de accesibilidad?** Los estándares WCAG 2.2.1 (*Timing Adjustable*) y nuestra propuesta de Fase 2 establecen que las personas con limitaciones motoras o cognitivas tardan más tiempo en completar formularios o recorrer pantallas. Si el token de sesión caduca a mitad de uso sin renovarse automáticamente, el usuario pierde su progreso.
 * **Cómo se implementa:** El cliente de Supabase se inicializa con `persistSession: true` y `autoRefreshToken: true` respaldado por `AsyncStorage` (`safeAuthStorage`), renovando el JWT en segundo plano de forma transparente.
+
+
+---
+
+## Nivel 7: Ingeniería de Retención UX (*Gradual Engagement*) y Arquitectura de Navegación (Fase 04)
+
+### 20. Compromiso Gradual (*Gradual Engagement / Deferred Authentication*) vs. Muro de Login (*Hard Login Wall*)
+* **Fundamento Académico y de Industria (Nielsen Norman Group & Apple HIG):**
+  * Un *Hard Login Wall* exige que el usuario se autentique antes de experimentar el valor de la aplicación, elevando el **Costo de Interacción (*Interaction Cost*)** y violando el **Principio de Reciprocidad**, lo que provoca altas tasas de abandono en el Día 1.
+  * El patrón *Gradual Engagement* (Wroblewski / Apple HIG *"Delay sign-in as long as possible"*) permite al usuario explorar libremente el catálogo y configurar su accesibilidad desde el segundo cero, presentando el formulario de autenticación ([`ContextualAuthPrompt`](../frontend/src/components/auth/contextual-auth-prompt.tsx)) únicamente cuando el usuario dispara una acción que requiere persistencia personal en la nube (*guardar un look, dar Me gusta o subir una fotografía*).
+
+### 21. Autenticación Accesible y Reducción de Carga Cognitiva (WCAG 2.2 Criterio 3.3.8)
+* **¿Qué establece WCAG 2.2 SC 3.3.8 (*Accessible Authentication*)?** Recordar, transcribir o manipular contraseñas constituye una **prueba de función cognitiva** que afecta desproporcionadamente a personas con dislexia, TDAH o limitaciones motoras.
+* **Cómo lo resuelve AurasMatch:**
+  1. No bloquea la exploración del Feed ni el uso del Filtro Triple detrás de un login obligatorio.
+  2. Coloca el **Menú Desplegable de Accesibilidad** encima del bloque de cuenta en `Usuario`, permitiendo activar el **Modo de Alto Contraste AAA**, la **Fuente para Dislexia** y el **Escalado al 200%** *antes* de interactuar con cualquier campo de texto de autenticación.
+
+### 22. Patrón *Headless Custom Hook* (`useUserProfile`)
+* **¿Qué es?** Es un patrón de arquitectura limpia en React donde toda la lógica de estado, llamadas asíncronas a Supabase, filtrado de colecciones (`myUploadedLooks`, `myLikedLooks`, `mySavedLooks`) y mutaciones (`requestHumanAppeal`) se encapsulan dentro de un hook sin interfaz visual ([`useUserProfile`](../frontend/src/hooks/use-user-profile.ts)).
+* **Por qué es clave para Google Stitch y la Defensa Técnica:** El archivo de pantalla ([`profile.tsx`](../frontend/src/app/profile.tsx)) se limita a describir la estructura visual consumiendo los datos ya procesados del hook. Así, aplicar estilos nuevos con **Google Stitch** jamás pone en riesgo las consultas a la base de datos.

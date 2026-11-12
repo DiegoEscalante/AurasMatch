@@ -16,7 +16,15 @@ Construir la pantalla principal del **Feed Comunitario (`index.tsx`)** estilo Pi
 3. **Autocompletado Tolerante a Errores Ortográficos (`2ndPhaseProposal.pdf` Sección V.B):**
    - Al escribir en la barra de búsqueda con faltas de ortografía (ej. `"jiray"`, `"egilr"`, `"gotico"`), sugiere chips predictivos corregidos mediante distancia de Levenshtein.
 
-*(Nota: Los detalles exactos de cómo se combinan los 3 filtros se confirmarán con el usuario justo al iniciar esta fase).*
+*(Decisiones técnicas aprobadas por el usuario para esta Fase 05):*
+- **Lógica de Combinación del Filtro Triple (Combinación Contextual Inteligente):**
+  1. Si se selecciona **Subcultura** (`Jirai Kei`, `Clean Girl`, `Goth`, `E-Girl`, `Y2K`), filtra looks que incluyan esa subcultura.
+  2. Si se seleccionan **Área Facial (`lips`, `brows`, `eyelids`, `lash_line`) + Color (`ColorFamilyId`) juntos**, busca que ese color perceptual (`CIELAB` $\Delta E$) esté presente específicamente en esa área facial (`extracted_regions[area].hex_value`).
+  3. Si se selecciona **solo Color** (sin área facial), busca ese color en cualquiera de las 4 áreas faciales del look.
+  4. Si se selecciona **solo Área Facial** (sin color), filtra looks que tengan extracción y productos recomendados en esa zona.
+- **Disposición Visual Responsiva estilo Pinterest:**
+  - Muestra una **cuadrícula de 2 columnas estilo Pinterest** cuando el escalado de texto es estándar (`100%`–`125%`), y cambia automáticamente a **1 sola columna ancha** cuando el usuario sube el escalado de texto a $\ge 150\%$ para evitar que las letras o botones se recorten (*WCAG 1.4.4 Resize Text*).
+  - Siguiendo el patrón *Gradual Engagement*, si un usuario visitante sin sesión toca *Like* o *Guardar*, se le muestra un aviso claro con botón directo para iniciar sesión en `Usuario`.
 
 ## 3. Lista Optimizada y Responsiva de Publicaciones (`FlatList`)
 - Filtra estrictamente `is_human_verified = true` (Garantía de Realismo Absoluto).
