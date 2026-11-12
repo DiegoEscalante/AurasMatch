@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, MinTouchTargetSize, Spacing } from '@/constants/theme';
+import { useAnalysisLock } from '@/contexts/analysis-lock-context';
 import { useTheme } from '@/hooks/use-theme';
 import { triggerHapticFeedback } from '@/utils/a11y-feedback';
 
@@ -32,6 +33,7 @@ interface AurasTabButtonProps {
   iconIos: string;
   iconAndroid: string;
   isFocused: boolean;
+  disabled?: boolean;
   onPress: () => void;
   style?: any;
 }
@@ -42,6 +44,7 @@ function AurasTabButton({
   iconIos,
   iconAndroid,
   isFocused,
+  disabled = false,
   onPress,
   style,
 }: AurasTabButtonProps) {
@@ -49,11 +52,13 @@ function AurasTabButton({
   const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
 
   const handlePress = (_event: GestureResponderEvent) => {
+    if (disabled) return;
     void triggerHapticFeedback('light');
     onPress();
   };
 
   const handleFocus = (_event: NativeSyntheticEvent<TargetedEvent>) => {
+    if (disabled) return;
     setIsKeyboardFocused(true);
   };
 
@@ -67,7 +72,8 @@ function AurasTabButton({
           role: 'tab' as const,
           'aria-label': accessibilityLabel,
           'aria-selected': Boolean(isFocused),
-          tabIndex: 0 as const,
+          'aria-disabled': Boolean(disabled),
+          tabIndex: (disabled ? -1 : 0) as 0 | -1,
         }
       : {};
 
@@ -80,8 +86,16 @@ function AurasTabButton({
       {...webAriaProps}
       accessible={true}
       accessibilityRole="tab"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ selected: Boolean(isFocused) }}
+      accessibilityLabel={
+        disabled
+          ? `${accessibilityLabel}. Deshabilitado temporalmente durante el análisis.`
+          : accessibilityLabel
+      }
+      accessibilityState={{
+        selected: Boolean(isFocused),
+        disabled: Boolean(disabled),
+      }}
+      disabled={disabled}
       hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
       onPress={handlePress}
       onFocus={handleFocus}
@@ -90,7 +104,8 @@ function AurasTabButton({
         StyleSheet.flatten([
           styles.tabTriggerPressable,
           flattenedIncomingStyle,
-          pressed && styles.pressed,
+          pressed && !disabled && styles.pressed,
+          disabled && { opacity: 0.38 },
         ])
       }
     >
@@ -131,15 +146,18 @@ function AurasTabButton({
 function CustomBottomTabList({
   children,
   style,
+  isLocked = false,
 }: {
   children: React.ReactNode;
   style?: any;
+  isLocked?: boolean;
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
   return (
     <View
+      pointerEvents={isLocked ? 'none' : 'auto'}
       accessibilityRole="tablist"
       accessibilityLabel="Navegación principal de AurasMatch"
       style={StyleSheet.flatten([
@@ -149,6 +167,7 @@ function CustomBottomTabList({
           backgroundColor: theme.backgroundElement,
           borderTopColor: theme.border,
           paddingBottom: Math.max(insets.bottom, Spacing.two),
+          opacity: isLocked ? 0.45 : 1,
         },
       ])}
     >
@@ -161,6 +180,7 @@ export default function AppTabs() {
   const theme = useTheme();
   const pathname = usePathname();
   const router = useRouter();
+  const { isAnalyzing } = useAnalysisLock();
 
   // Active tab determination based on pathname
   const isFeedFocused =
@@ -176,13 +196,14 @@ export default function AppTabs() {
       </View>
 
       {/* Persistent Bottom Tab Bar */}
-      <CustomBottomTabList>
+      <CustomBottomTabList isLocked={isAnalyzing}>
         <AurasTabButton
           label="Feed"
           accessibilityLabel="Pestaña 1 de 3: Feed comunitario de maquillaje"
           iconIos="sparkles"
           iconAndroid="auto_awesome"
           isFocused={isFeedFocused}
+          disabled={isAnalyzing}
           onPress={() => router.push('/')}
         />
 
@@ -192,6 +213,7 @@ export default function AppTabs() {
           iconIos="camera.fill"
           iconAndroid="photo_camera"
           isFocused={isUploadFocused}
+          disabled={isAnalyzing}
           onPress={() => router.push('/upload')}
         />
 
@@ -201,6 +223,7 @@ export default function AppTabs() {
           iconIos="person.crop.circle.fill"
           iconAndroid="person"
           isFocused={isProfileFocused}
+          disabled={isAnalyzing}
           onPress={() => router.push('/profile')}
         />
       </CustomBottomTabList>

@@ -411,7 +411,7 @@ export function ProductDetailModal({
                   SKU en Base de Datos:
                 </ThemedText>
                 <ThemedText style={[styles.specValue, { color: theme.textSecondary }]}>
-                  #{product.id} {product.parent_api_id ? `(Ref. ${product.parent_api_id})` : ''}
+                  #{product.id}
                 </ThemedText>
               </View>
             </View>

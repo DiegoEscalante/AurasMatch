@@ -23,6 +23,7 @@ export interface AccessibilityPrefs {
   font_family_variant: FontFamilyVariant;
   font_scale: number; // 1.0 (100%) up to 2.0 (200%)
   reduced_motion: boolean;
+  assistive_voice_bar: boolean; // Spec 08 & 2ndPhaseProposal.pdf V.A.3
 }
 
 export const DEFAULT_ACCESSIBILITY_PREFS: AccessibilityPrefs = {
@@ -32,6 +33,7 @@ export const DEFAULT_ACCESSIBILITY_PREFS: AccessibilityPrefs = {
   font_family_variant: 'default',
   font_scale: 1.0,
   reduced_motion: false,
+  assistive_voice_bar: false,
 };
 
 interface AccessibilityContextValue {
@@ -79,6 +81,7 @@ function normalizePrefs(raw?: Partial<AccessibilityPrefs> | null): Accessibility
     font_family_variant: dyslexiaFont || fontVariant !== 'default' ? fontVariant : 'default',
     font_scale: fontScale,
     reduced_motion: Boolean(merged.reduced_motion),
+    assistive_voice_bar: Boolean(merged.assistive_voice_bar),
   };
 }
 

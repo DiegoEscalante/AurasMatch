@@ -60,6 +60,7 @@ export default function FeedHomeScreen() {
     isLoading,
     isRefreshing,
     errorMessage,
+    dismissError,
     searchQuery,
     setSearchQuery,
     selectedSubculture,
@@ -184,14 +185,14 @@ export default function FeedHomeScreen() {
         </View>
       )}
 
-      {/* Error Banner if fetch failed */}
+      {/* Error Banner if fetch or mutation failed */}
       {errorMessage && (
         <View style={styles.alertWrapper}>
           <VisualAlertBanner
             variant="warning"
-            title="Aviso de Conexión"
+            title="Aviso de Base de Datos"
             message={errorMessage}
-            onDismiss={() => {}}
+            onDismiss={dismissError}
           />
         </View>
       )}

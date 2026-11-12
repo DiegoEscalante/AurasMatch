@@ -3,6 +3,7 @@ import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { useAccessibility } from '@/hooks/use-accessibility';
 import { useTheme } from '@/hooks/use-theme';
 import { formatAccessibleColorLabel, getSpanishColorName } from '@/utils/color-names';
 
@@ -36,6 +37,11 @@ export function ColorSwatchBadge({
   style,
 }: ColorSwatchBadgeProps) {
   const theme = useTheme();
+  const { effectiveFontScale, prefs } = useAccessibility();
+  const fontScale = effectiveFontScale ?? prefs?.font_scale ?? 1.0;
+  const circleSize = Math.round(24 * fontScale);
+  const circleRadius = Math.round(circleSize / 2);
+
   const normalizedHex = hexValue?.startsWith('#') ? hexValue.toUpperCase() : `#${hexValue || '000000'}`.toUpperCase();
   const spanishName = getSpanishColorName(normalizedHex);
   const accessibleLabel = formatAccessibleColorLabel(normalizedHex, regionLabel);
@@ -59,6 +65,9 @@ export function ColorSwatchBadge({
         style={[
           styles.swatchCircle,
           {
+            width: circleSize,
+            height: circleSize,
+            borderRadius: circleRadius,
             backgroundColor: normalizedHex,
             borderColor: theme.text,
           },

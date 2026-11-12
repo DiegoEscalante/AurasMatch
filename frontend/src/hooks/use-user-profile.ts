@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAuth } from '@/hooks/use-auth';
 import {
-  getLocalLookOverrides,
+  fetchProfileUsernamesMap,
+  fetchSavedLookIdsForUser,
+  hydrateLookRowFromDb,
   isSupabaseConfigured,
+  isValidUuid,
   REAL_SUPABASE_MIRROR_LOOKS,
-  resolveLookImageUrl,
-  saveLocalLookOverrides,
+  requestLookAppeal,
+  subscribeLookDataChanges,
   supabase,
 } from '@/services/supabase';
 import { AppealStatus, LookRow } from '@/types/database';
@@ -27,70 +30,14 @@ export interface UseUserProfileReturn {
   requestHumanAppeal: (lookId: string) => Promise<void>;
 }
 
-function hydrateLookRow(
-  raw: Record<string, any>,
-  currentUserId: string | undefined,
-  savedSet: Set<string>,
-  localOverrides: Awaited<ReturnType<typeof getLocalLookOverrides>>
-): LookRow {
-  const id = String(raw.id);
-  const dbLikedBy = Array.isArray(raw.liked_by) ? (raw.liked_by as string[]) : [];
-  const mergedLikedBy = Array.from(
-    new Set([
-      ...dbLikedBy,
-      ...(localOverrides.likedLookIds.includes(id) && currentUserId ? [currentUserId] : []),
-    ])
-  );
-
-  const appealStatus: AppealStatus =
-    localOverrides.appealsByLookId[id] ||
-    (raw.appeal_status as AppealStatus) ||
-    'none';
-
-  const description =
-    localOverrides.descriptionsByLookId[id] ||
-    (typeof raw.description === 'string' && raw.description.trim()
-      ? raw.description
-      : `Maquillaje estilo ${
-          Array.isArray(raw.subculture) && raw.subculture.length > 0
-            ? raw.subculture.join(', ')
-            : 'alternativo'
-        }`);
-
-  return {
-    id,
-    user_id: String(raw.user_id),
-    image_path: String(raw.image_path || ''),
-    is_human_verified: Boolean(raw.is_human_verified),
-    ai_confidence_score: Number(raw.ai_confidence_score ?? 0),
-    subculture: Array.isArray(raw.subculture) ? raw.subculture : [],
-    subculture_confidence_score:
-      raw.subculture_confidence_score !== null && raw.subculture_confidence_score !== undefined
-        ? Number(raw.subculture_confidence_score)
-        : null,
-    extracted_regions: (raw.extracted_regions as LookRow['extracted_regions']) || {},
-    tags: Array.isArray(raw.tags) ? raw.tags : [],
-    created_at: String(raw.created_at || new Date().toISOString()),
-    description,
-    liked_by: mergedLikedBy,
-    appeal_status: appealStatus,
-    comments:
-      localOverrides.commentsByLookId[id] ||
-      (Array.isArray(raw.comments) ? raw.comments : []),
-    resolved_image_url: resolveLookImageUrl(raw.image_path, id),
-    is_saved_by_me: savedSet.has(id) || localOverrides.savedLookIds.includes(id),
-    is_liked_by_me: Boolean(currentUserId && mergedLikedBy.includes(currentUserId)),
-  };
-}
-
 /**
  * Headless Custom Hook for the User Profile screen (`profile.tsx`).
  * Fetches the user's Uploaded Looks (including any flagged by the Anti-AI filter so they can appeal),
  * Liked Looks (`looks.liked_by`), and Saved Looks (`public.saved_looks`).
  */
 export function useUserProfile(): UseUserProfileReturn {
-  const { profile, isAuthenticated } = useAuth();
-  const currentUserId = profile?.id;
+  const { user, profile, isAuthenticated } = useAuth();
+  const currentUserId = profile?.id || user?.id;
 
   const [activeTab, setActiveTab] = useState<ProfileCollectionTab>('uploads');
   const [allLooks, setAllLooks] = useState<LookRow[]>([]);
@@ -107,46 +54,78 @@ export function useUserProfile(): UseUserProfileReturn {
     setErrorMessage(null);
 
     try {
-      const localOverrides = await getLocalLookOverrides();
-      const savedSet = new Set<string>(localOverrides.savedLookIds);
+      const savedSet = await fetchSavedLookIdsForUser(currentUserId);
 
-      if (isSupabaseConfigured) {
-        const [{ data: looksData, error: looksError }, { data: savedData }] =
-          await Promise.all([
-            supabase
-              .from('looks')
-              .select('*')
-              .order('created_at', { ascending: false })
-              .limit(60),
-            supabase
-              .from('saved_looks')
-              .select('look_id')
-              .eq('user_id', currentUserId),
-          ]);
+      if (isSupabaseConfigured && isValidUuid(currentUserId)) {
+        const savedIds = Array.from(savedSet);
+        const [ownRes, likedRes, savedRes] = await Promise.all([
+          supabase
+            .from('looks')
+            .select('*')
+            .eq('user_id', currentUserId)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('looks')
+            .select('*')
+            .contains('liked_by', [currentUserId])
+            .order('created_at', { ascending: false }),
+          savedIds.length > 0
+            ? supabase
+                .from('looks')
+                .select('*')
+                .in('id', savedIds)
+                .order('created_at', { ascending: false })
+            : Promise.resolve({ data: [] as Record<string, any>[], error: null }),
+        ]);
 
-        if (Array.isArray(savedData)) {
-          for (const row of savedData) {
-            if (row.look_id) savedSet.add(String(row.look_id));
+        const queryError = ownRes.error || likedRes.error || savedRes.error;
+        if (queryError) {
+          throw queryError;
+        }
+
+        const mergedMap = new Map<string, Record<string, any>>();
+        for (const row of [
+          ...(Array.isArray(ownRes.data) ? ownRes.data : []),
+          ...(Array.isArray(likedRes.data) ? likedRes.data : []),
+          ...(Array.isArray(savedRes.data) ? savedRes.data : []),
+        ]) {
+          if (row?.id && !mergedMap.has(String(row.id))) {
+            mergedMap.set(String(row.id), row);
           }
         }
 
-        if (!looksError && Array.isArray(looksData) && looksData.length > 0) {
-          const hydrated = looksData.map((row) =>
-            hydrateLookRow(row, currentUserId, savedSet, localOverrides)
-          );
-          setAllLooks(hydrated);
-          return;
-        }
+        const mergedRows = Array.from(mergedMap.values()).sort((a, b) => {
+          const ta = Date.parse(String(a.created_at || '')) || 0;
+          const tb = Date.parse(String(b.created_at || '')) || 0;
+          return tb - ta;
+        });
+
+        const authorUsernames = await fetchProfileUsernamesMap(
+          mergedRows.map((row) => String(row.user_id || ''))
+        );
+        const hydrated = mergedRows.map((row) =>
+          hydrateLookRowFromDb(row, {
+            currentUserId,
+            savedLookIds: savedSet,
+            authorUsernames,
+          })
+        );
+        setAllLooks(hydrated);
+        return;
       }
 
-      // Automatic fallback to real mirror rows if ANON_KEY is not pasted yet
+      // Automatic fallback to real mirror rows if offline/unconfigured
       const fallbackHydrated = REAL_SUPABASE_MIRROR_LOOKS.map((row) =>
-        hydrateLookRow(row, currentUserId, savedSet, localOverrides)
+        hydrateLookRowFromDb(row, {
+          currentUserId,
+          savedLookIds: savedSet,
+        })
       );
       setAllLooks(fallbackHydrated);
-    } catch {
+    } catch (err: any) {
       setErrorMessage(
-        'No se pudieron sincronizar tus colecciones en la nube. Mostrando copia local.'
+        err?.message ||
+          'No se pudieron sincronizar tus colecciones en la nube.'
       );
     } finally {
       setIsLoading(false);
@@ -157,33 +136,46 @@ export function useUserProfile(): UseUserProfileReturn {
     void refreshProfileData();
   }, [refreshProfileData]);
 
+  useEffect(() => {
+    if (!isAuthenticated || !currentUserId) return;
+    return subscribeLookDataChanges(() => {
+      void refreshProfileData();
+    });
+  }, [isAuthenticated, currentUserId, refreshProfileData]);
+
   const requestHumanAppeal = useCallback(
     async (lookId: string) => {
+      const previousAppealStatus: AppealStatus =
+        allLooks.find((item) => item.id === lookId)?.appeal_status ?? 'none';
+      setErrorMessage(null);
+
+      setAllLooks((prev) =>
+        prev.map((item) =>
+          item.id === lookId ? { ...item, appeal_status: 'pending' } : item
+        )
+      );
+
       try {
-        const overrides = await getLocalLookOverrides();
-        overrides.appealsByLookId[lookId] = 'pending';
-        await saveLocalLookOverrides(overrides);
-
-        setAllLooks((prev) =>
-          prev.map((item) =>
-            item.id === lookId ? { ...item, appeal_status: 'pending' } : item
-          )
-        );
-
-        if (isSupabaseConfigured) {
-          await supabase
-            .from('looks')
-            .update({ appeal_status: 'pending' })
-            .eq('id', lookId);
-        }
+        await requestLookAppeal(lookId);
 
         await triggerHapticFeedback('success');
         announceStatus('Apelación enviada para revisión manual humana');
-      } catch {
-        setErrorMessage('No se pudo registrar la apelación en este momento.');
+      } catch (err: any) {
+        setAllLooks((prev) =>
+          prev.map((item) =>
+            item.id === lookId
+              ? { ...item, appeal_status: previousAppealStatus }
+              : item
+          )
+        );
+        await triggerHapticFeedback('error');
+        const msg =
+          err?.message || 'No se pudo registrar la apelación en este momento.';
+        setErrorMessage(msg);
+        announceStatus(msg);
       }
     },
-    []
+    [allLooks]
   );
 
   const myUploadedLooks = useMemo(

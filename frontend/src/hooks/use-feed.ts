@@ -9,12 +9,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAuth } from '@/hooks/use-auth';
 import {
-  getLocalLookOverrides,
+  fetchProfileUsernamesMap,
+  fetchSavedLookIdsForUser,
+  hydrateLookRowFromDb,
   isSupabaseConfigured,
   REAL_SUPABASE_MIRROR_LOOKS,
-  resolveLookImageUrl,
-  saveLocalLookOverrides,
+  subscribeLookDataChanges,
   supabase,
+  toggleLookLike,
+  toggleLookSaved,
 } from '@/services/supabase';
 import {
   AestheticSubculture,
@@ -63,82 +66,75 @@ export interface UseFeedFilterReturn {
 
   // Actions
   refreshFeed: () => Promise<void>;
+  dismissError: () => void;
   toggleLike: (lookId: string) => Promise<{ requiresAuth: boolean }>;
   toggleSave: (lookId: string) => Promise<{ requiresAuth: boolean }>;
 }
 
-function hydrateLook(
-  raw: Record<string, any>,
-  currentUserId: string | undefined,
-  savedLookIds: Set<string>,
-  localOverrides: Awaited<ReturnType<typeof getLocalLookOverrides>>
-): LookRow {
-  const id = String(raw.id);
-  const dbLikedBy = Array.isArray(raw.liked_by) ? (raw.liked_by as string[]) : [];
-  const mergedLikedBy = Array.from(
-    new Set([
-      ...dbLikedBy,
-      ...(localOverrides.likedLookIds.includes(id) && currentUserId ? [currentUserId] : []),
-    ])
-  );
-
-  const isLikedByMe = Boolean(currentUserId && mergedLikedBy.includes(currentUserId));
-  const isSavedByMe = savedLookIds.has(id) || localOverrides.savedLookIds.includes(id);
-
-  const subcultureList = Array.isArray(raw.subculture)
-    ? (raw.subculture as string[])
-    : typeof raw.subculture === 'string'
-    ? [raw.subculture]
-    : [];
-
-  const description =
-    localOverrides.descriptionsByLookId[id] ||
-    (typeof raw.description === 'string' && raw.description.trim()
-      ? raw.description
-      : `Look de maquillaje estilo ${subcultureList.join(', ') || 'alternativo'}.`);
-
-  return {
-    id,
-    user_id: String(raw.user_id),
-    image_path: String(raw.image_path || ''),
-    is_human_verified: Boolean(raw.is_human_verified),
-    ai_confidence_score: Number(raw.ai_confidence_score ?? 0),
-    subculture: subcultureList,
-    subculture_confidence_score:
-      raw.subculture_confidence_score !== null && raw.subculture_confidence_score !== undefined
-        ? Number(raw.subculture_confidence_score)
-        : null,
-    extracted_regions: (raw.extracted_regions as LookRow['extracted_regions']) || {},
-    tags: Array.isArray(raw.tags) ? raw.tags : [],
-    created_at: String(raw.created_at || new Date().toISOString()),
-    description,
-    liked_by: mergedLikedBy,
-    appeal_status: localOverrides.appealsByLookId[id] || raw.appeal_status || 'none',
-    comments: localOverrides.commentsByLookId[id] || (Array.isArray(raw.comments) ? raw.comments : []),
-    resolved_image_url: resolveLookImageUrl(raw.image_path, id),
-    is_liked_by_me: isLikedByMe,
-    is_saved_by_me: isSavedByMe,
-    author_username: raw.author_username || 'aurasmatch_bot',
-  };
+function shuffleList<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
 }
 
+// In-memory module cache to preserve filter selections across screen navigation
+let cachedSearchQuery: string = '';
+let cachedSelectedSubculture: AestheticSubculture | null = null;
+let cachedSelectedFacialZone: FacialRegionKey | null = null;
+let cachedSelectedColorFamily: ColorFamilyId | null = null;
+let cachedIsFilterOpen: boolean = false;
+
 export function useFeed(): UseFeedFilterReturn {
-  const { profile, isAuthenticated } = useAuth();
-  const currentUserId = profile?.id;
+  const { user, profile, isAuthenticated } = useAuth();
+  const currentUserId = profile?.id || user?.id;
 
   const [looks, setLooks] = useState<LookRow[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Filter States
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedSubculture, setSelectedSubculture] = useState<AestheticSubculture | null>(null);
-  const [selectedFacialZone, setSelectedFacialZone] = useState<FacialRegionKey | null>(null);
-  const [selectedColorFamily, setSelectedColorFamily] = useState<ColorFamilyId | null>(null);
-  const [isFilterOpen, setIsFilterOpen] = useState<boolean>(false);
+  // Filter States persisted across navigation
+  const [searchQuery, setSearchQueryState] = useState<string>(cachedSearchQuery);
+  const [selectedSubculture, setSelectedSubcultureState] = useState<AestheticSubculture | null>(
+    cachedSelectedSubculture
+  );
+  const [selectedFacialZone, setSelectedFacialZoneState] = useState<FacialRegionKey | null>(
+    cachedSelectedFacialZone
+  );
+  const [selectedColorFamily, setSelectedColorFamilyState] = useState<ColorFamilyId | null>(
+    cachedSelectedColorFamily
+  );
+  const [isFilterOpen, setIsFilterOpenState] = useState<boolean>(cachedIsFilterOpen);
 
-  // Fetch verified looks
+  const setSearchQuery = useCallback((query: string) => {
+    cachedSearchQuery = query;
+    setSearchQueryState(query);
+  }, []);
+
+  const setSelectedSubculture = useCallback((subculture: AestheticSubculture | null) => {
+    cachedSelectedSubculture = subculture;
+    setSelectedSubcultureState(subculture);
+  }, []);
+
+  const setSelectedFacialZone = useCallback((zone: FacialRegionKey | null) => {
+    cachedSelectedFacialZone = zone;
+    setSelectedFacialZoneState(zone);
+  }, []);
+
+  const setSelectedColorFamily = useCallback((color: ColorFamilyId | null) => {
+    cachedSelectedColorFamily = color;
+    setSelectedColorFamilyState(color);
+  }, []);
+
+  const setIsFilterOpen = useCallback((open: boolean) => {
+    cachedIsFilterOpen = open;
+    setIsFilterOpenState(open);
+  }, []);
+
+  // Fetch verified looks directly from Supabase
   const fetchLooks = useCallback(async (isRefresh: boolean = false) => {
     if (isRefresh) {
       setIsRefreshing(true);
@@ -148,26 +144,13 @@ export function useFeed(): UseFeedFilterReturn {
     setErrorMessage(null);
 
     try {
-      const overrides = await getLocalLookOverrides();
-      const savedSet = new Set<string>(overrides.savedLookIds);
-
-      // Fetch saved looks if logged in
-      if (isSupabaseConfigured && currentUserId && !currentUserId.startsWith('demo-')) {
-        const { data: savedData } = await supabase
-          .from('saved_looks')
-          .select('look_id')
-          .eq('user_id', currentUserId);
-        if (savedData) {
-          for (const s of savedData) {
-            savedSet.add(s.look_id);
-          }
-        }
-      }
+      // Fetch saved looks directly from Supabase if logged in
+      const savedSet = await fetchSavedLookIdsForUser(currentUserId);
 
       let fetchedList: LookRow[] = [];
 
       if (isSupabaseConfigured) {
-        // Query strictly human-verified looks (Guarantee of Absolute Realism)
+        // Query strictly human-verified looks directly from Supabase database
         const { data, error } = await supabase
           .from('looks')
           .select('*')
@@ -175,8 +158,15 @@ export function useFeed(): UseFeedFilterReturn {
           .order('created_at', { ascending: false });
 
         if (!error && data && data.length > 0) {
+          const authorIds = data.map((item) => String(item.user_id || '')).filter(Boolean);
+          const authorUsernames = await fetchProfileUsernamesMap(authorIds);
           fetchedList = data.map((item) =>
-            hydrateLook(item, currentUserId, savedSet, overrides)
+            hydrateLookRowFromDb(item, {
+              currentUserId,
+              savedLookIds: savedSet,
+              authorUsernames,
+              defaultAuthor: 'usuario_auras',
+            })
           );
         }
       }
@@ -184,31 +174,26 @@ export function useFeed(): UseFeedFilterReturn {
       // If empty or offline, use verified mirror looks
       if (fetchedList.length === 0) {
         fetchedList = REAL_SUPABASE_MIRROR_LOOKS.filter((l) => l.is_human_verified).map((item) =>
-          hydrateLook(item, currentUserId, savedSet, overrides)
+          hydrateLookRowFromDb(item, {
+            currentUserId,
+            savedLookIds: savedSet,
+            defaultAuthor: 'aurasmatch_bot',
+          })
         );
       }
 
-      // Prepend user-created looks so newly published looks appear at the top of the feed
-      const userLooks = (overrides.userCreatedLooks || [])
-        .filter((l) => l.is_human_verified)
-        .map((item) => hydrateLook(item, currentUserId, savedSet, overrides));
-
-      const existingIds = new Set(userLooks.map((l) => l.id));
-      const combined = [...userLooks, ...fetchedList.filter((l) => !existingIds.has(l.id))];
-
-      setLooks(combined);
-    } catch (err: any) {
+      // Randomize the order of publications for a dynamic, exploratory feed
+      setLooks(shuffleList(fetchedList));
+    } catch {
       setErrorMessage('No se pudieron sincronizar las publicaciones con el servidor.');
-      // Fallback
-      const overrides = await getLocalLookOverrides();
-      const userLooks = (overrides.userCreatedLooks || [])
-        .filter((l) => l.is_human_verified)
-        .map((item) => hydrateLook(item, currentUserId, new Set(overrides.savedLookIds), overrides));
-      const existingIds = new Set(userLooks.map((l) => l.id));
       const fallbackList = REAL_SUPABASE_MIRROR_LOOKS.filter((l) => l.is_human_verified).map((item) =>
-        hydrateLook(item, currentUserId, new Set(overrides.savedLookIds), overrides)
+        hydrateLookRowFromDb(item, {
+          currentUserId,
+          savedLookIds: new Set(),
+          defaultAuthor: 'aurasmatch_bot',
+        })
       );
-      setLooks([...userLooks, ...fallbackList.filter((l) => !existingIds.has(l.id))]);
+      setLooks(shuffleList(fallbackList));
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -216,8 +201,41 @@ export function useFeed(): UseFeedFilterReturn {
   }, [currentUserId]);
 
   useEffect(() => {
-    fetchLooks();
+    void fetchLooks();
   }, [fetchLooks]);
+
+  // Keep feed cards synced whenever Look Detail or Upload mutates Supabase
+  useEffect(() => {
+    return subscribeLookDataChanges((event) => {
+      if (event.type === 'created' || event.type === 'appeal') {
+        void fetchLooks(true);
+        return;
+      }
+
+      setLooks((prev) =>
+        prev.map((item) => {
+          if (item.id !== event.lookId) return item;
+          if (event.type === 'like') {
+            return {
+              ...item,
+              liked_by: event.likedBy,
+              is_liked_by_me: Boolean(currentUserId && event.likedBy.includes(currentUserId)),
+            };
+          }
+          if (event.type === 'save' && event.userId === currentUserId) {
+            return { ...item, is_saved_by_me: event.isSaved };
+          }
+          if (event.type === 'comment') {
+            return { ...item, comments: event.comments };
+          }
+          if (event.type === 'description') {
+            return { ...item, description: event.description };
+          }
+          return item;
+        })
+      );
+    });
+  }, [currentUserId, fetchLooks]);
 
   // Derived filter count
   const activeFilterCount = useMemo(() => {
@@ -230,10 +248,14 @@ export function useFeed(): UseFeedFilterReturn {
 
   // Reset filters
   const clearFilters = useCallback(() => {
-    setSelectedSubculture(null);
-    setSelectedFacialZone(null);
-    setSelectedColorFamily(null);
-    setSearchQuery('');
+    cachedSearchQuery = '';
+    cachedSelectedSubculture = null;
+    cachedSelectedFacialZone = null;
+    cachedSelectedColorFamily = null;
+    setSearchQueryState('');
+    setSelectedSubcultureState(null);
+    setSelectedFacialZoneState(null);
+    setSelectedColorFamilyState(null);
     triggerHapticFeedback();
     announceStatus('Todos los filtros han sido limpiados.');
   }, []);
@@ -261,7 +283,7 @@ export function useFeed(): UseFeedFilterReturn {
       setSearchQuery(item.label);
       announceStatus(`Buscando ${item.label}`);
     }
-  }, []);
+  }, [setSelectedSubculture, setSelectedFacialZone, setSelectedColorFamily, setSearchQuery]);
 
   // Contextual Intelligent Combination Filter Logic
   const filteredLooks = useMemo(() => {
@@ -330,7 +352,7 @@ export function useFeed(): UseFeedFilterReturn {
     });
   }, [looks, selectedSubculture, selectedFacialZone, selectedColorFamily, searchQuery]);
 
-  // Gradual Engagement: Like action
+  // Direct Database Like Action
   const toggleLike = useCallback(
     async (lookId: string): Promise<{ requiresAuth: boolean }> => {
       if (!isAuthenticated || !currentUserId) {
@@ -338,14 +360,14 @@ export function useFeed(): UseFeedFilterReturn {
         return { requiresAuth: true };
       }
 
+      setErrorMessage(null);
       triggerHapticFeedback('medium');
 
       // Optimistic update
       setLooks((prev) =>
         prev.map((l) => {
           if (l.id !== lookId) return l;
-          const currentlyLiked = l.is_liked_by_me;
-          const nextLiked = !currentlyLiked;
+          const nextLiked = !l.is_liked_by_me;
           const nextLikedBy = nextLiked
             ? Array.from(new Set([...l.liked_by, currentUserId]))
             : l.liked_by.filter((uid) => uid !== currentUserId);
@@ -358,36 +380,48 @@ export function useFeed(): UseFeedFilterReturn {
         })
       );
 
-      // Persist in local overrides
-      const overrides = await getLocalLookOverrides();
-      const nextLikedIds = overrides.likedLookIds.includes(lookId)
-        ? overrides.likedLookIds.filter((id) => id !== lookId)
-        : [...overrides.likedLookIds, lookId];
-      await saveLocalLookOverrides({ ...overrides, likedLookIds: nextLikedIds });
+      // Direct update in Supabase
+      try {
+        const res = await toggleLookLike(lookId, currentUserId);
+        setLooks((prev) =>
+          prev.map((l) =>
+            l.id === lookId
+              ? { ...l, is_liked_by_me: res.isLiked, liked_by: res.likedBy }
+              : l
+          )
+        );
+        announceStatus(
+          res.isLiked ? 'Me gusta guardado en la base de datos' : 'Me gusta eliminado de la base de datos'
+        );
+      } catch (err: any) {
+        // Revert on error and surface clear feedback
+        setLooks((prev) =>
+          prev.map((l) => {
+            if (l.id !== lookId) return l;
+            const revertedLiked = !l.is_liked_by_me;
+            const revertedLikedBy = revertedLiked
+              ? Array.from(new Set([...l.liked_by, currentUserId]))
+              : l.liked_by.filter((uid) => uid !== currentUserId);
 
-      // Persist in Supabase if live
-      if (isSupabaseConfigured && !currentUserId.startsWith('demo-')) {
-        try {
-          const targetLook = looks.find((l) => l.id === lookId);
-          if (targetLook) {
-            const nextList = targetLook.is_liked_by_me
-              ? targetLook.liked_by.filter((uid) => uid !== currentUserId)
-              : Array.from(new Set([...targetLook.liked_by, currentUserId]));
-
-            await supabase.from('looks').update({ liked_by: nextList }).eq('id', lookId);
-          }
-        } catch {
-          // Handled gracefully
-        }
+            return {
+              ...l,
+              is_liked_by_me: revertedLiked,
+              liked_by: revertedLikedBy,
+            };
+          })
+        );
+        const msg = err?.message || 'No se pudo guardar el Me gusta en la base de datos.';
+        setErrorMessage(msg);
+        void triggerHapticFeedback('error');
+        announceStatus(`Error: ${msg}`);
       }
 
-      announceStatus('Estado de me gusta actualizado');
       return { requiresAuth: false };
     },
-    [isAuthenticated, currentUserId, looks]
+    [isAuthenticated, currentUserId]
   );
 
-  // Gradual Engagement: Save action
+  // Direct Database Save Action
   const toggleSave = useCallback(
     async (lookId: string): Promise<{ requiresAuth: boolean }> => {
       if (!isAuthenticated || !currentUserId) {
@@ -395,6 +429,7 @@ export function useFeed(): UseFeedFilterReturn {
         return { requiresAuth: true };
       }
 
+      setErrorMessage(null);
       triggerHapticFeedback('medium');
 
       // Optimistic update
@@ -408,38 +443,44 @@ export function useFeed(): UseFeedFilterReturn {
         })
       );
 
-      // Persist locally
-      const overrides = await getLocalLookOverrides();
-      const isSaved = overrides.savedLookIds.includes(lookId);
-      const nextSavedIds = isSaved
-        ? overrides.savedLookIds.filter((id) => id !== lookId)
-        : [...overrides.savedLookIds, lookId];
-      await saveLocalLookOverrides({ ...overrides, savedLookIds: nextSavedIds });
-
-      // Persist in Supabase if live
-      if (isSupabaseConfigured && !currentUserId.startsWith('demo-')) {
-        try {
-          if (isSaved) {
-            await supabase
-              .from('saved_looks')
-              .delete()
-              .eq('user_id', currentUserId)
-              .eq('look_id', lookId);
-          } else {
-            await supabase
-              .from('saved_looks')
-              .upsert({ user_id: currentUserId, look_id: lookId }, { onConflict: 'user_id,look_id' });
-          }
-        } catch {
-          // Handled gracefully
-        }
+      // Direct update in Supabase table saved_looks
+      try {
+        const res = await toggleLookSaved(lookId, currentUserId);
+        setLooks((prev) =>
+          prev.map((l) =>
+            l.id === lookId ? { ...l, is_saved_by_me: res.isSaved } : l
+          )
+        );
+        announceStatus(
+          res.isSaved
+            ? 'Publicación guardada en tu perfil'
+            : 'Publicación eliminada de tus guardados'
+        );
+      } catch (err: any) {
+        // Revert on error and surface clear feedback
+        setLooks((prev) =>
+          prev.map((l) => {
+            if (l.id !== lookId) return l;
+            return {
+              ...l,
+              is_saved_by_me: !l.is_saved_by_me,
+            };
+          })
+        );
+        const msg = err?.message || 'No se pudo actualizar Guardados en la base de datos.';
+        setErrorMessage(msg);
+        void triggerHapticFeedback('error');
+        announceStatus(`Error: ${msg}`);
       }
 
-      announceStatus('Colección guardada actualizada');
       return { requiresAuth: false };
     },
     [isAuthenticated, currentUserId]
   );
+
+  const dismissError = useCallback(() => {
+    setErrorMessage(null);
+  }, []);
 
   return {
     looks,
@@ -462,6 +503,7 @@ export function useFeed(): UseFeedFilterReturn {
     applySuggestion,
     clearFilters,
     refreshFeed: () => fetchLooks(true),
+    dismissError,
     toggleLike,
     toggleSave,
   };

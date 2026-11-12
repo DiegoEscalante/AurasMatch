@@ -17,7 +17,7 @@ import { ThemedView } from '@/components/themed-view';
 import { AccessiblePressable } from '@/components/ui/accessible-pressable';
 import { VisualAlertBanner } from '@/components/ui/visual-alert-banner';
 import { AIAnalysisResultsCard } from '@/components/upload/ai-analysis-results-card';
-import { LightingGuideCollapsible } from '@/components/upload/lighting-guide-collapsible';
+import { LightingGuideModal } from '@/components/upload/lighting-guide-modal';
 import { MaxContentWidth, MinTouchTargetSize, Spacing } from '@/constants/theme';
 import { useAuth } from '@/hooks/use-auth';
 import { useTheme } from '@/hooks/use-theme';
@@ -40,6 +40,7 @@ export default function UploadLookScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { isAuthenticated, profile } = useAuth();
+  const [showLightingGuideModal, setShowLightingGuideModal] = React.useState<boolean>(false);
 
   const {
     status,
@@ -50,6 +51,7 @@ export default function UploadLookScreen() {
     errorMessage,
     isNoFaceDetected,
     isNetworkError,
+    isAnalyzing,
     appealStatus,
     isAppealing,
     isPublished,
@@ -87,8 +89,51 @@ export default function UploadLookScreen() {
           </ThemedText>
         </View>
 
-        {/* Lighting Guide Dropdown (WCAG 2.4.1 Bypass Blocks) */}
-        <LightingGuideCollapsible />
+        {/* Lighting Guide Trigger Card (Accessible Popup Modal) */}
+        <AccessiblePressable
+          accessibilityRole="button"
+          accessibilityLabel="Abrir guía de iluminación y recomendaciones para la foto"
+          accessibilityHint={
+            isAnalyzing
+              ? 'Deshabilitado mientras se analiza la fotografía'
+              : 'Abre una ventana emergente con consejos de luz natural, ausencia de filtros y encuadre'
+          }
+          disabled={isAnalyzing}
+          onPress={() => {
+            if (isAnalyzing) return;
+            triggerHapticFeedback('light');
+            announceStatus('Abriendo ventana modal de guía de iluminación');
+            setShowLightingGuideModal(true);
+          }}
+          style={[
+            styles.lightingGuideTrigger,
+            {
+              backgroundColor: theme.backgroundElement,
+              borderColor: theme.border,
+              opacity: isAnalyzing ? 0.45 : 1,
+            },
+          ]}>
+          <View style={styles.lightingGuideLeft}>
+            <ThemedText style={styles.lightingGuideIcon}>💡</ThemedText>
+            <View style={styles.lightingGuideTextCol}>
+              <ThemedText type="smallBold" style={{ color: theme.text }}>
+                Guía de Iluminación y Extracción
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
+                Consejos de luz frontal, ausencia de filtros y rasgos despejados
+              </ThemedText>
+            </View>
+          </View>
+          <ThemedText style={[styles.lightingGuideArrow, { color: theme.primary }]}>
+            Ver guía →
+          </ThemedText>
+        </AccessiblePressable>
+
+        {/* Lighting Guide Popup Modal */}
+        <LightingGuideModal
+          visible={showLightingGuideModal}
+          onClose={() => setShowLightingGuideModal(false)}
+        />
 
         {/* Gradual Engagement Check */}
         {!isAuthenticated || !profile ? (
@@ -186,12 +231,20 @@ export default function UploadLookScreen() {
                 <View style={styles.previewActionsRow}>
                   <AccessiblePressable
                     accessibilityLabel="Cambiar fotografía"
-                    accessibilityHint="Abre la galería para elegir una foto diferente"
+                    accessibilityHint={
+                      isAnalyzing
+                        ? 'Deshabilitado mientras se analiza la fotografía'
+                        : 'Abre la galería para elegir una foto diferente'
+                    }
                     onPress={pickImageFromGallery}
-                    disabled={status === 'analyzing' || status === 'publishing'}
+                    disabled={isAnalyzing || status === 'analyzing' || status === 'publishing'}
                     style={[
                       styles.smallActionButton,
-                      { borderColor: theme.border, borderWidth: 1 },
+                      {
+                        borderColor: theme.border,
+                        borderWidth: 1,
+                        opacity: isAnalyzing || status === 'analyzing' ? 0.38 : 1,
+                      },
                     ]}>
                     <ThemedText type="small" style={{ fontSize: 12, fontWeight: '600' }}>
                       🔄 Cambiar foto
@@ -200,12 +253,20 @@ export default function UploadLookScreen() {
 
                   <AccessiblePressable
                     accessibilityLabel="Eliminar fotografía seleccionada"
-                    accessibilityHint="Borra la imagen actual y limpia el borrador"
+                    accessibilityHint={
+                      isAnalyzing
+                        ? 'Deshabilitado mientras se analiza la fotografía'
+                        : 'Borra la imagen actual y limpia el borrador'
+                    }
                     onPress={clearImage}
-                    disabled={status === 'analyzing' || status === 'publishing'}
+                    disabled={isAnalyzing || status === 'analyzing' || status === 'publishing'}
                     style={[
                       styles.smallActionButton,
-                      { borderColor: '#EF444455', borderWidth: 1 },
+                      {
+                        borderColor: '#EF444455',
+                        borderWidth: 1,
+                        opacity: isAnalyzing || status === 'analyzing' ? 0.38 : 1,
+                      },
                     ]}>
                     <ThemedText type="small" style={{ fontSize: 12, color: '#EF4444', fontWeight: '600' }}>
                       🗑️ Eliminar
@@ -217,11 +278,19 @@ export default function UploadLookScreen() {
                 {status === 'ready_to_analyze' && (
                   <AccessiblePressable
                     accessibilityLabel="Analizar maquillaje con inteligencia artificial"
-                    accessibilityHint="Envía la imagen a Cloud Run para clasificar subcultura y extraer colores con MediaPipe"
+                    accessibilityHint={
+                      isAnalyzing
+                        ? 'Deshabilitado mientras se analiza la fotografía'
+                        : 'Envía la imagen a Cloud Run para clasificar subcultura y extraer colores con MediaPipe'
+                    }
                     onPress={analyzeLook}
+                    disabled={isAnalyzing}
                     style={[
                       styles.analyzeButton,
-                      { backgroundColor: theme.primary },
+                      {
+                        backgroundColor: theme.primary,
+                        opacity: isAnalyzing ? 0.45 : 1,
+                      },
                     ]}>
                     <ThemedText
                       type="default"
@@ -403,6 +472,14 @@ export default function UploadLookScreen() {
                 {/* Step 4: Publish Action or Success Feedback */}
                 {!isPublished ? (
                   <View style={styles.publishBlock}>
+                    {status === 'analyzed' && errorMessage ? (
+                      <VisualAlertBanner
+                        variant="error"
+                        title="Error al publicar"
+                        message={errorMessage}
+                        style={{ marginBottom: 12 }}
+                      />
+                    ) : null}
                     <AccessiblePressable
                       accessibilityLabel="Publicar look de maquillaje en la comunidad"
                       accessibilityHint="Guarda tu publicación en Supabase con su descripción y colores extraídos para que aparezca en el Feed"
@@ -500,6 +577,33 @@ const styles = StyleSheet.create({
   },
   headerBlock: {
     gap: Spacing.half,
+  },
+  lightingGuideTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing.three,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    minHeight: MinTouchTargetSize,
+    gap: Spacing.two,
+  },
+  lightingGuideLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    flex: 1,
+  },
+  lightingGuideIcon: {
+    fontSize: 22,
+  },
+  lightingGuideTextCol: {
+    flex: 1,
+    gap: 2,
+  },
+  lightingGuideArrow: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   contentFlow: {
     gap: Spacing.four,

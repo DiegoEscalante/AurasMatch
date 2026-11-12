@@ -3,6 +3,8 @@ import * as SplashScreen from 'expo-splash-screen';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
+import { AssistiveVoiceBar } from '@/components/ui/assistive-voice-bar';
+import { AnalysisLockProvider } from '@/contexts/analysis-lock-context';
 import { AccessibilityProvider, useAccessibility } from '@/hooks/use-accessibility';
 import { AuthProvider } from '@/hooks/use-auth';
 
@@ -16,6 +18,7 @@ function RootLayoutContent() {
     <ThemeProvider value={isDarkLike ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       <AppTabs />
+      <AssistiveVoiceBar />
     </ThemeProvider>
   );
 }
@@ -24,7 +27,9 @@ export default function TabLayout() {
   return (
     <AccessibilityProvider>
       <AuthProvider>
-        <RootLayoutContent />
+        <AnalysisLockProvider>
+          <RootLayoutContent />
+        </AnalysisLockProvider>
       </AuthProvider>
     </AccessibilityProvider>
   );

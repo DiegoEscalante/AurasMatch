@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   AccessibilityActionEvent,
+  ActivityIndicator,
   Image,
   StyleSheet,
   View,
@@ -20,7 +21,6 @@ import {
 
 import { ThemedText } from '@/components/themed-text';
 import { AccessiblePressable } from '@/components/ui/accessible-pressable';
-import { ColorSwatchBadge } from '@/components/ui/color-swatch-badge';
 import { MinTouchTargetSize, Spacing } from '@/constants/theme';
 import { useAccessibility } from '@/hooks/use-accessibility';
 import { useTheme } from '@/hooks/use-theme';
@@ -31,6 +31,13 @@ import {
   stopSpeaking,
   triggerHapticFeedback,
 } from '@/utils/a11y-feedback';
+
+const COMPACT_FACIAL_REGION_LABELS: Record<string, string> = {
+  lips: 'Labios',
+  brows: 'Cejas',
+  eyelids: 'Párpados',
+  lash_line: 'Delineado',
+};
 
 export interface LookCardProps {
   look: LookRow;
@@ -49,10 +56,30 @@ export function LookCard({
 }: LookCardProps) {
   const router = useRouter();
   const theme = useTheme();
-  const { prefs } = useAccessibility();
+  const { prefs, effectiveFontScale, resolvedThemeKey } = useAccessibility();
   const high_contrast = prefs.high_contrast;
+  const fontScale = effectiveFontScale ?? prefs.font_scale ?? 1.0;
+  const isDark =
+    resolvedThemeKey === 'dark' ||
+    resolvedThemeKey === 'high_contrast' ||
+    prefs.theme_mode === 'dark' ||
+    prefs.theme_mode === 'high_contrast';
+
+  const swatchBorderColor = high_contrast
+    ? '#FFFFFF'
+    : isDark
+    ? 'rgba(255, 255, 255, 0.65)'
+    : 'rgba(0, 0, 0, 0.25)';
+
+  // Proportional scaling for swatch circles and columns based on text scaling (WCAG 1.4.4 Resize Text)
+  const circleSize = Math.round(22 * fontScale);
+  const circleRadius = Math.round(circleSize / 2);
+  const columnMinWidth = Math.round(38 * fontScale);
+  const columnMaxWidth = Math.round(65 * fontScale);
+  const swatchGap = Math.round(10 * Math.min(fontScale, 1.4));
 
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isImageLoading, setIsImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
 
   const subcultureText =
@@ -156,11 +183,23 @@ export function LookCard({
       >
         {/* Look Image with 100% Human Verification Badge */}
         <View style={styles.imageWrapper}>
+          {isImageLoading && !imageError && (
+            <View
+              style={[
+                styles.imageLoadingContainer,
+                {
+                  height: isSingleColumn ? 260 : 190,
+                  backgroundColor: theme.backgroundElement,
+                },
+              ]}
+            >
+              <ActivityIndicator size="small" color={theme.primary} />
+            </View>
+          )}
+
           <Image
             source={{
-              uri: imageError
-                ? 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80'
-                : look.resolved_image_url || 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80',
+              uri: look.resolved_image_url || undefined,
             }}
             style={[
               styles.image,
@@ -169,31 +208,15 @@ export function LookCard({
               },
             ]}
             resizeMode="cover"
-            onError={() => setImageError(true)}
+            onLoadStart={() => setIsImageLoading(true)}
+            onLoadEnd={() => setIsImageLoading(false)}
+            onError={() => {
+              setIsImageLoading(false);
+              setImageError(true);
+            }}
             accessible={true}
             accessibilityLabel={`Foto del look estilo ${subcultureText}`}
           />
-
-          {/* 100% Human Verified Badge (Anti-AI Pillar) */}
-          <View
-            style={[
-              styles.verifiedBadge,
-              {
-                backgroundColor: high_contrast ? '#000000' : '#14532D',
-                borderColor: high_contrast ? '#FFFFFF' : '#22C55E',
-              },
-            ]}
-            accessible={false}
-          >
-            <ThemedText
-              style={[
-                styles.verifiedText,
-                { color: high_contrast ? '#FFFFFF' : '#86EFAC' },
-              ]}
-            >
-              ✓ 100% Humano
-            </ThemedText>
-          </View>
         </View>
 
         {/* Content Body */}
@@ -233,17 +256,35 @@ export function LookCard({
             {look.description}
           </ThemedText>
 
-          {/* Extracted Swatches preview */}
+          {/* Extracted Swatches preview: Clean row of scalable color circles */}
           {regionEntries.length > 0 && (
-            <View style={styles.swatchRow} accessible={false}>
+            <View
+              style={[styles.compactSwatchesRow, { gap: swatchGap }]}
+              accessible={true}
+              accessibilityRole="text"
+              accessibilityLabel={`Paleta de colores del look: ${regionEntries
+                .slice(0, 4)
+                .map(
+                  ([zone, detail]) =>
+                    `${COMPACT_FACIAL_REGION_LABELS[zone] || zone} tono ${detail.hex_value}`
+                )
+                .join(', ')}. Toca para ver el desglose completo.`}
+            >
               {regionEntries.slice(0, 4).map(([zone, detail]) => (
-                <View key={zone} style={styles.swatchItem}>
-                  <ColorSwatchBadge
-                    hexValue={detail.hex_value}
-                    regionLabel={FACIAL_REGION_LABELS[zone] || zone}
-                    showHexCode={false}
-                  />
-                </View>
+                <View
+                  key={zone}
+                  style={[
+                    styles.compactSwatchCircle,
+                    {
+                      width: circleSize,
+                      height: circleSize,
+                      borderRadius: circleRadius,
+                      backgroundColor: detail.hex_value,
+                      borderColor: swatchBorderColor,
+                      borderWidth: high_contrast ? 2 : 1.5,
+                    },
+                  ]}
+                />
               ))}
             </View>
           )}
@@ -363,6 +404,16 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#000000',
   },
+  imageLoadingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
   image: {
     width: '100%',
     backgroundColor: '#1E293B',
@@ -409,16 +460,38 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
   },
-  swatchRow: {
+  compactSwatchesRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    gap: 10,
+    marginTop: Spacing.one,
+    marginBottom: Spacing.half,
     flexWrap: 'wrap',
-    gap: Spacing.one,
-    marginTop: Spacing.half,
-    marginBottom: Spacing.half,
   },
-  swatchItem: {
-    marginRight: Spacing.one,
-    marginBottom: Spacing.half,
+  compactSwatchColumn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 40,
+    maxWidth: 60,
+  },
+  compactSwatchCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    marginBottom: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 1.5,
+    elevation: 1,
+  },
+  compactSwatchText: {
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   descriptionText: {
     fontSize: 13,

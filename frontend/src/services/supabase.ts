@@ -10,6 +10,7 @@ import {
   ProductRow,
   ProfileRow,
 } from '@/types/database';
+import { getPresignedR2Url } from './r2-storage';
 
 const DEFAULT_SUPABASE_URL = 'https://wcxegqikzpaiavtrvmsy.supabase.co';
 
@@ -23,7 +24,8 @@ export const R2_PUBLIC_URL =
   process.env.EXPO_PUBLIC_R2_PUBLIC_URL?.trim().replace(/\/+$/, '') || '';
 
 export const BACKEND_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL?.trim().replace(/\/+$/, '') || 'http://localhost:8000';
+  process.env.EXPO_PUBLIC_BACKEND_URL?.trim().replace(/\/+$/, '') ||
+  'https://aurasmatch-529197173940.europe-west1.run.app';
 
 export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
@@ -78,22 +80,14 @@ export const supabase = createClient(
   }
 );
 
-const FALLBACK_PORTRAIT_IMAGES = [
-  'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80',
-  'https://images.unsplash.com/photo-1503236823255-94609f598e71?auto=format&fit=crop&w=800&q=80',
-];
-
 /**
- * Resolves a relative Cloudflare R2 path (e.g. "user_looks/uuid.jpg") into a full HTTPS URL.
- * If EXPO_PUBLIC_R2_PUBLIC_URL is not configured yet, returns a deterministic portrait image
- * so UI testing never displays blank broken boxes.
+ * Resolves a relative Cloudflare R2 path (e.g. "scraped_looks/uuid.jpg" or "user_looks/uuid.jpg")
+ * into a live, authenticated Cloudflare R2 HTTPS URL.
+ * Uses AWS SigV4 query-signed Presigned URLs or the public CDN URL to pull real photos from R2.
  */
-export function resolveLookImageUrl(imagePath?: string | null, seedId?: string): string {
+export function resolveLookImageUrl(imagePath?: string | null, _seedId?: string): string {
   if (!imagePath) {
-    return FALLBACK_PORTRAIT_IMAGES[0];
+    return '';
   }
   const clean = imagePath.trim();
   if (
@@ -105,15 +99,154 @@ export function resolveLookImageUrl(imagePath?: string | null, seedId?: string):
   ) {
     return clean;
   }
-  if (R2_PUBLIC_URL) {
-    return `${R2_PUBLIC_URL}/${clean.replace(/^\/+/, '')}`;
+  
+  // Resolve directly from Cloudflare R2 bucket 'auras-match'
+  const r2Url = getPresignedR2Url(clean);
+  if (r2Url) {
+    return r2Url;
   }
-  const hashSource = seedId || clean;
-  let sum = 0;
-  for (let i = 0; i < hashSource.length; i++) {
-    sum += hashSource.charCodeAt(i);
+
+  return '';
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(value?: string | null): value is string {
+  return Boolean(value && UUID_REGEX.test(value.trim()));
+}
+
+export type LookMutationEvent =
+  | { type: 'like'; lookId: string; isLiked: boolean; likedBy: string[] }
+  | { type: 'save'; lookId: string; userId: string; isSaved: boolean }
+  | { type: 'comment'; lookId: string; comments: LookCommentItem[] }
+  | { type: 'description'; lookId: string; description: string }
+  | { type: 'appeal'; lookId: string; appealStatus: AppealStatus }
+  | { type: 'created'; lookId: string };
+
+type LookMutationListener = (event: LookMutationEvent) => void;
+const lookMutationListeners = new Set<LookMutationListener>();
+
+/**
+ * Suscribe una pantalla o hook a cambios reales persistidos en Supabase
+ * para mantener Feed, Detalle y Perfil sincronizados sin recargar toda la app.
+ */
+export function subscribeLookDataChanges(listener: LookMutationListener): () => void {
+  lookMutationListeners.add(listener);
+  return () => {
+    lookMutationListeners.delete(listener);
+  };
+}
+
+export function notifyLookDataChanged(event: LookMutationEvent): void {
+  lookMutationListeners.forEach((listener) => {
+    try {
+      listener(event);
+    } catch {
+      // Isolate listener errors
+    }
+  });
+}
+
+function isRpcMissingError(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg = String(error.message || '').toLowerCase();
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    msg.includes('could not find the function') ||
+    msg.includes('does not exist')
+  );
+}
+
+/**
+ * Consulta nombres de usuario en `public.profiles` en lote para hidratar autores de looks.
+ */
+export async function fetchProfileUsernamesMap(
+  userIds: string[]
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const validIds = Array.from(new Set(userIds.filter((id) => isValidUuid(id))));
+  if (!isSupabaseConfigured || validIds.length === 0) {
+    return map;
   }
-  return FALLBACK_PORTRAIT_IMAGES[sum % FALLBACK_PORTRAIT_IMAGES.length];
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, username')
+      .in('id', validIds);
+
+    if (!error && Array.isArray(data)) {
+      for (const row of data) {
+        if (row?.id && row?.username) {
+          map.set(String(row.id), String(row.username));
+        }
+      }
+    }
+  } catch {
+    // Non-fatal: falls back to default username label
+  }
+
+  return map;
+}
+
+/**
+ * Normaliza un registro crudo de `public.looks` en `LookRow` con URL de R2,
+ * estado de like/guardado para `currentUserId` y nombre del autor.
+ */
+export function hydrateLookRowFromDb(
+  raw: Record<string, any>,
+  options: {
+    currentUserId?: string | null;
+    savedLookIds?: Set<string>;
+    authorUsernames?: Map<string, string>;
+    defaultAuthor?: string;
+  } = {}
+): LookRow {
+  const { currentUserId, savedLookIds, authorUsernames, defaultAuthor = 'usuario_auras' } = options;
+  const id = String(raw.id);
+  const userId = String(raw.user_id || '');
+  const dbLikedBy: string[] = Array.isArray(raw.liked_by) ? raw.liked_by.map(String) : [];
+  const subcultureList: string[] = Array.isArray(raw.subculture)
+    ? raw.subculture.map(String).filter(Boolean)
+    : typeof raw.subculture === 'string' && raw.subculture.trim()
+    ? [raw.subculture.trim()]
+    : [];
+
+  const description =
+    typeof raw.description === 'string' && raw.description.trim()
+      ? raw.description
+      : `Maquillaje estilo ${subcultureList.join(', ') || 'alternativo'}.`;
+
+  const resolvedAuthor =
+    authorUsernames?.get(userId) ||
+    (typeof raw.author_username === 'string' && raw.author_username.trim()) ||
+    defaultAuthor;
+
+  return {
+    id,
+    user_id: userId,
+    author_username: resolvedAuthor,
+    image_path: String(raw.image_path || ''),
+    is_human_verified: Boolean(raw.is_human_verified),
+    ai_confidence_score: Number(raw.ai_confidence_score ?? 0),
+    subculture: subcultureList,
+    subculture_confidence_score:
+      raw.subculture_confidence_score !== null && raw.subculture_confidence_score !== undefined
+        ? Number(raw.subculture_confidence_score)
+        : null,
+    extracted_regions: (raw.extracted_regions as LookRow['extracted_regions']) || {},
+    tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+    created_at: String(raw.created_at || new Date().toISOString()),
+    description,
+    liked_by: dbLikedBy,
+    appeal_status: (raw.appeal_status as AppealStatus) || 'none',
+    comments: Array.isArray(raw.comments) ? raw.comments : [],
+    resolved_image_url: resolveLookImageUrl(raw.image_path, id),
+    is_liked_by_me: Boolean(currentUserId && dbLikedBy.includes(currentUserId)),
+    is_saved_by_me: Boolean(savedLookIds?.has(id)),
+  };
 }
 
 /**
@@ -132,187 +265,10 @@ export function resolveProductImageUrl(imageUrl?: string | null): string {
 }
 
 /**
- * Real mirror records from your live Supabase database (`looks` & `products`)
- * used ONLY as automatic fallback when `EXPO_PUBLIC_SUPABASE_ANON_KEY` has not been pasted yet.
+ * Mirror records kept empty to guarantee that all feed publications originate
+ * strictly and dynamically from your live Supabase database (`looks`).
  */
-export const REAL_SUPABASE_MIRROR_LOOKS: LookRow[] = [
-  {
-    id: '6290b685-4a2e-4058-80e6-7d1a8463c34f',
-    user_id: '2fb75323-525b-482a-bf38-e0ea63275a04',
-    image_path: 'user_looks/8673b143-7aef-43d7-a2b8-2ae2f68f9b8d.jpg',
-    is_human_verified: true,
-    ai_confidence_score: 0.23,
-    subculture: ['Goth'],
-    subculture_confidence_score: 0.93,
-    // Solo Labios y Delineado (NO Cejas, NO Párpados)
-    extracted_regions: {
-      lips: { hex_value: '#3B3735', recommended_skus: { lipstick: 751, lip_liner: 642 } },
-      lash_line: { hex_value: '#2B2928', recommended_skus: { mascara: 267, eyeliner: 440 } },
-    },
-    tags: ['goth', 'darklips', 'humanverified'],
-    created_at: '2026-11-06T19:34:51.155112+00:00',
-    description:
-      'Maquillaje Goth de alto contraste enfocado en labios negro carbón oscuro y delineado gráfico intenso.',
-    liked_by: [],
-    appeal_status: 'none',
-    comments: [],
-    author_username: 'aurasmatch_bot',
-  },
-  {
-    id: 'a18f9210-1b2c-4058-80e6-9c2a8463c111',
-    user_id: '2fb75323-525b-482a-bf38-e0ea63275a04',
-    image_path: 'user_looks/clean-girl-sample.jpg',
-    is_human_verified: true,
-    ai_confidence_score: 0.14,
-    subculture: ['Clean Girl'],
-    subculture_confidence_score: 0.91,
-    // Solo Labios y Cejas (NO Párpados, NO Delineado)
-    extracted_regions: {
-      lips: { hex_value: '#B28378', recommended_skus: { lip_liner: 1, lipstick: 2 } },
-      brows: { hex_value: '#63473B', recommended_skus: { eyebrow: 326 } },
-    },
-    tags: ['cleangirl', 'nudelips', 'naturalglow'],
-    created_at: '2026-11-07T15:20:00.000000+00:00',
-    description:
-      'Estética Clean Girl minimalista con labios nude beige cálido y cejas peinadas naturales en tono marrón café.',
-    liked_by: [],
-    appeal_status: 'none',
-    comments: [],
-    author_username: 'aurasmatch_bot',
-  },
-  {
-    id: 'c39d7102-8e4f-4912-9a11-4f8b9201e222',
-    user_id: '2fb75323-525b-482a-bf38-e0ea63275a04',
-    image_path: 'user_looks/jirai-kei-sample.jpg',
-    is_human_verified: true,
-    ai_confidence_score: 0.19,
-    subculture: ['Jirai Kei'],
-    subculture_confidence_score: 0.89,
-    // Solo Párpados y Labios (NO Cejas, NO Delineado)
-    extracted_regions: {
-      lips: { hex_value: '#B81D2A', recommended_skus: { lipstick: 751, lip_liner: 1 } },
-      eyelids: { hex_value: '#D46A8E', recommended_skus: { eyeshadow: 122 } },
-    },
-    tags: ['jiraikei', 'pinkshadow', 'redlips'],
-    created_at: '2026-11-08T18:10:00.000000+00:00',
-    description:
-      'Look Jirai Kei con sombras rosa frambuesa en párpados inferiores y labios rojo carmín degradado.',
-    liked_by: [],
-    appeal_status: 'none',
-    comments: [],
-    author_username: 'aurasmatch_bot',
-  },
-  {
-    id: 'e45b8812-3c4d-4781-8b22-0a1c9342f333',
-    user_id: '2fb75323-525b-482a-bf38-e0ea63275a04',
-    image_path: 'user_looks/egirl-sample.jpg',
-    is_human_verified: true,
-    ai_confidence_score: 0.11,
-    subculture: ['E-Girl'],
-    subculture_confidence_score: 0.94,
-    // Solo Párpados y Delineado (NO Labios, NO Cejas)
-    extracted_regions: {
-      eyelids: { hex_value: '#7E579F', recommended_skus: { eyeshadow: 122 } },
-      lash_line: { hex_value: '#2B2928', recommended_skus: { eyeliner: 440, mascara: 267 } },
-    },
-    tags: ['egirl', 'purpleeyeshadow', 'wingedliner'],
-    created_at: '2026-11-09T12:00:00.000000+00:00',
-    description:
-      'Estilo E-Girl enfocado en los ojos: sombras morado lavanda y delineado alado negro azabache.',
-    liked_by: [],
-    appeal_status: 'none',
-    comments: [],
-    author_username: 'aurasmatch_bot',
-  },
-  {
-    id: 'f56c9923-4d5e-4892-9c33-1b2d0453a444',
-    user_id: '2fb75323-525b-482a-bf38-e0ea63275a04',
-    image_path: 'user_looks/y2k-sample.jpg',
-    is_human_verified: true,
-    ai_confidence_score: 0.16,
-    subculture: ['Y2K'],
-    subculture_confidence_score: 0.88,
-    // Solo Párpados (NO Labios, NO Cejas, NO Delineado)
-    extracted_regions: {
-      eyelids: { hex_value: '#2C4A7E', recommended_skus: { eyeshadow: 122 } },
-    },
-    tags: ['y2k', 'frostedblue', 'retromakeup'],
-    created_at: '2026-11-10T09:30:00.000000+00:00',
-    description:
-      'Maquillaje Y2K futurista con sombras azul profundo escarchadas en los párpados sin delineado oscuro.',
-    liked_by: [],
-    appeal_status: 'none',
-    comments: [],
-    author_username: 'aurasmatch_bot',
-  },
-  {
-    id: 'b29a0321-2c3d-4169-9f07-8e3b9574d555',
-    user_id: '2fb75323-525b-482a-bf38-e0ea63275a04',
-    image_path: 'user_looks/clean-girl-full.jpg',
-    is_human_verified: true,
-    ai_confidence_score: 0.08,
-    subculture: ['Clean Girl'],
-    subculture_confidence_score: 0.95,
-    // Las 4 regiones completas
-    extracted_regions: {
-      lips: { hex_value: '#C59B87', recommended_skus: { lipstick: 2, lip_liner: 1 } },
-      brows: { hex_value: '#63473B', recommended_skus: { eyebrow: 326 } },
-      eyelids: { hex_value: '#C89D54', recommended_skus: { eyeshadow: 122 } },
-      lash_line: { hex_value: '#2B2928', recommended_skus: { mascara: 267 } },
-    },
-    tags: ['cleangirl', 'goldshimmer', 'fulllook'],
-    created_at: '2026-11-10T20:15:00.000000+00:00',
-    description:
-      'Look completo Clean Girl con las 4 áreas: labios nude suave, cejas café, sombras dorado bronce y pestañas negras.',
-    liked_by: [],
-    appeal_status: 'none',
-    comments: [],
-    author_username: 'aurasmatch_bot',
-  },
-  {
-    id: 'c30b1432-3d4e-4270-af18-9f4c0685e666',
-    user_id: '2fb75323-525b-482a-bf38-e0ea63275a04',
-    image_path: 'user_looks/grunge-olive-plum.jpg',
-    is_human_verified: true,
-    ai_confidence_score: 0.12,
-    subculture: ['Goth'],
-    subculture_confidence_score: 0.91,
-    // Solo Párpados y Labios (Verde oliva y Vino ciruela)
-    extracted_regions: {
-      eyelids: { hex_value: '#3B6E52', recommended_skus: { eyeshadow: 122 } },
-      lips: { hex_value: '#5B1E31', recommended_skus: { lipstick: 751 } },
-    },
-    tags: ['goth', 'olivegreen', 'darkplum'],
-    created_at: '2026-11-11T08:00:00.000000+00:00',
-    description:
-      'Look Goth con sombras verde oliva esmeralda y labios en tono vino ciruela profundo.',
-    liked_by: [],
-    appeal_status: 'none',
-    comments: [],
-    author_username: 'aurasmatch_bot',
-  },
-  {
-    id: 'd41c2543-4e5f-4381-b029-0a5d1796f777',
-    user_id: '2fb75323-525b-482a-bf38-e0ea63275a04',
-    image_path: 'user_looks/coral-peach-look.jpg',
-    is_human_verified: true,
-    ai_confidence_score: 0.09,
-    subculture: ['Clean Girl'],
-    subculture_confidence_score: 0.92,
-    // Solo Labios (Coral durazno cálido)
-    extracted_regions: {
-      lips: { hex_value: '#E07A5F', recommended_skus: { lipstick: 2 } },
-    },
-    tags: ['cleangirl', 'coralpeach', 'warmtones'],
-    created_at: '2026-11-11T14:30:00.000000+00:00',
-    description:
-      'Estilo cálido y luminoso con labios en tono coral durazno vibrante.',
-    liked_by: [],
-    appeal_status: 'none',
-    comments: [],
-    author_username: 'aurasmatch_bot',
-  },
-];
+export const REAL_SUPABASE_MIRROR_LOOKS: LookRow[] = [];
 
 export const REAL_SUPABASE_MIRROR_PRODUCTS: Record<number, ProductRow> = {
   1: {
@@ -445,81 +401,203 @@ export const REAL_SUPABASE_MIRROR_PRODUCTS: Record<number, ProductRow> = {
   },
 };
 
-const LOCAL_INTERACTIONS_KEY = '@aurasmatch/local_look_interactions_v1';
-
-interface LocalLookOverrides {
-  likedLookIds: string[];
-  savedLookIds: string[];
-  descriptionsByLookId: Record<string, string>;
-  appealsByLookId: Record<string, AppealStatus>;
-  commentsByLookId: Record<string, LookCommentItem[]>;
-  userCreatedLooks: LookRow[];
-}
-
-const DEFAULT_LOCAL_OVERRIDES: LocalLookOverrides = {
-  likedLookIds: [],
-  savedLookIds: [],
-  descriptionsByLookId: {},
-  appealsByLookId: {},
-  commentsByLookId: {},
-  userCreatedLooks: [],
-};
-
-export async function getLocalLookOverrides(): Promise<LocalLookOverrides> {
-  try {
-    const raw = await safeAuthStorage.getItem(LOCAL_INTERACTIONS_KEY);
-    if (!raw) return DEFAULT_LOCAL_OVERRIDES;
-    const parsed = JSON.parse(raw) as Partial<LocalLookOverrides>;
-    return {
-      ...DEFAULT_LOCAL_OVERRIDES,
-      ...parsed,
-      userCreatedLooks: Array.isArray(parsed.userCreatedLooks) ? parsed.userCreatedLooks : [],
-    };
-  } catch {
-    return DEFAULT_LOCAL_OVERRIDES;
+/**
+ * Alterna el me gusta de un look directamente en Supabase (`public.looks.liked_by`).
+ * Prioriza el RPC atómico `toggle_look_like` (SECURITY DEFINER) y usa fallback con verificación de filas.
+ */
+export async function toggleLookLike(
+  lookId: string,
+  userId: string
+): Promise<{ success: boolean; isLiked: boolean; likedBy: string[] }> {
+  if (!isSupabaseConfigured || !isValidUuid(userId) || !isValidUuid(lookId)) {
+    throw new Error('Sesión o publicación inválida para guardar Me gusta en Supabase.');
   }
-}
 
-export async function saveLocalLookOverrides(next: LocalLookOverrides): Promise<void> {
-  await safeAuthStorage.setItem(LOCAL_INTERACTIONS_KEY, JSON.stringify(next));
-}
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('toggle_look_like', {
+    p_look_id: lookId,
+  });
 
-export const IN_MEMORY_USER_LOOKS = new Map<string, LookRow>();
+  if (!rpcErr && rpcData) {
+    const isLiked = Boolean((rpcData as Record<string, unknown>).is_liked);
+    const rawLikedBy = (rpcData as Record<string, unknown>).liked_by;
+    const likedBy = Array.isArray(rawLikedBy) ? rawLikedBy.map(String) : [];
+    notifyLookDataChanged({ type: 'like', lookId, isLiked, likedBy });
+    return { success: true, isLiked, likedBy };
+  }
+
+  if (rpcErr && !isRpcMissingError(rpcErr)) {
+    throw new Error(rpcErr.message || 'Error al actualizar me gusta en la base de datos');
+  }
+
+  // Fallback si la función RPC aún no ha sido creada en Supabase
+  const { data, error: selectErr } = await supabase
+    .from('looks')
+    .select('liked_by')
+    .eq('id', lookId)
+    .single();
+
+  if (selectErr || !data) {
+    throw new Error(selectErr?.message || 'Error al obtener la publicación de la base de datos');
+  }
+
+  const currentLikedBy: string[] = Array.isArray(data.liked_by) ? data.liked_by.map(String) : [];
+  const currentlyLiked = currentLikedBy.includes(userId);
+  const nextLikedBy = currentlyLiked
+    ? currentLikedBy.filter((id) => id !== userId)
+    : Array.from(new Set([...currentLikedBy, userId]));
+
+  const { data: updatedRows, error: updateErr } = await supabase
+    .from('looks')
+    .update({ liked_by: nextLikedBy })
+    .eq('id', lookId)
+    .select('id, liked_by');
+
+  if (updateErr) {
+    throw new Error(updateErr.message || 'Error al actualizar me gusta en la base de datos');
+  }
+
+  if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+    throw new Error(
+      'Supabase bloqueó la actualización del Me gusta (0 filas afectadas por RLS). Ejecuta docs/supabase-rls-and-rpcs.sql en Supabase.'
+    );
+  }
+
+  const confirmedLikedBy = Array.isArray(updatedRows[0].liked_by)
+    ? updatedRows[0].liked_by.map(String)
+    : nextLikedBy;
+  const isLiked = confirmedLikedBy.includes(userId);
+
+  notifyLookDataChanged({ type: 'like', lookId, isLiked, likedBy: confirmedLikedBy });
+
+  return {
+    success: true,
+    isLiked,
+    likedBy: confirmedLikedBy,
+  };
+}
 
 /**
- * Persists a newly uploaded or simulated look in memory, mirror, and local overrides
- * so it immediately resolves in `fetchLookById` and displays in the feed.
+ * Alterna el guardado de un look directamente en la tabla `public.saved_looks` de Supabase.
  */
-export async function saveUserCreatedLook(look: LookRow): Promise<void> {
-  // 1. In-memory map (synchronous and immune to localStorage size quotas)
-  IN_MEMORY_USER_LOOKS.set(look.id, look);
-
-  // 2. Prepend to mirror looks array
-  const mirrorIdx = REAL_SUPABASE_MIRROR_LOOKS.findIndex((l) => l.id === look.id);
-  if (mirrorIdx >= 0) {
-    REAL_SUPABASE_MIRROR_LOOKS[mirrorIdx] = look;
-  } else {
-    REAL_SUPABASE_MIRROR_LOOKS.unshift(look);
+export async function toggleLookSaved(
+  lookId: string,
+  userId: string
+): Promise<{ success: boolean; isSaved: boolean }> {
+  if (!isSupabaseConfigured || !isValidUuid(userId) || !isValidUuid(lookId)) {
+    throw new Error('Sesión o publicación inválida para guardar en Supabase.');
   }
 
-  // 3. Persist in AsyncStorage
-  try {
-    const overrides = await getLocalLookOverrides();
-    const existingIdx = overrides.userCreatedLooks.findIndex((l) => l.id === look.id);
-    // Sanitize huge data URLs to avoid QuotaExceededError in localStorage
-    const storableLook: LookRow = {
-      ...look,
-      image_path: look.image_path.length > 50000 ? 'user_looks/saved-look.jpg' : look.image_path,
-    };
-    if (existingIdx >= 0) {
-      overrides.userCreatedLooks[existingIdx] = storableLook;
-    } else {
-      overrides.userCreatedLooks.unshift(storableLook);
+  const { data: existing, error: selectErr } = await supabase
+    .from('saved_looks')
+    .select('look_id')
+    .eq('user_id', userId)
+    .eq('look_id', lookId)
+    .maybeSingle();
+
+  if (selectErr) {
+    throw new Error(selectErr.message || 'Error al consultar la tabla saved_looks');
+  }
+
+  if (existing) {
+    const { data: deletedRows, error: deleteErr } = await supabase
+      .from('saved_looks')
+      .delete()
+      .eq('user_id', userId)
+      .eq('look_id', lookId)
+      .select('look_id');
+
+    if (deleteErr) {
+      throw new Error(deleteErr.message || 'Error al eliminar de saved_looks');
     }
-    await saveLocalLookOverrides(overrides);
-  } catch {
-    // Memory map ensures session availability
+
+    if (!Array.isArray(deletedRows) || deletedRows.length === 0) {
+      throw new Error('Supabase no permitió eliminar el guardado (revisa políticas RLS en saved_looks).');
+    }
+
+    notifyLookDataChanged({ type: 'save', lookId, userId, isSaved: false });
+    return { success: true, isSaved: false };
+  } else {
+    const { data: insertedRows, error: insertErr } = await supabase
+      .from('saved_looks')
+      .upsert(
+        { user_id: userId, look_id: lookId },
+        { onConflict: 'user_id,look_id' }
+      )
+      .select('look_id');
+
+    if (insertErr) {
+      throw new Error(insertErr.message || 'Error al insertar en saved_looks');
+    }
+
+    if (!Array.isArray(insertedRows) || insertedRows.length === 0) {
+      throw new Error('Supabase no permitió guardar la publicación (revisa políticas RLS en saved_looks).');
+    }
+
+    notifyLookDataChanged({ type: 'save', lookId, userId, isSaved: true });
+    return { success: true, isSaved: true };
   }
+}
+
+/**
+ * Consulta la lista de IDs de looks guardados por el usuario directamente en Supabase (`public.saved_looks`).
+ */
+export async function fetchSavedLookIdsForUser(userId?: string | null): Promise<Set<string>> {
+  if (!isSupabaseConfigured || !isValidUuid(userId)) {
+    return new Set<string>();
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('saved_looks')
+      .select('look_id')
+      .eq('user_id', userId);
+
+    if (error || !Array.isArray(data)) {
+      return new Set<string>();
+    }
+
+    return new Set<string>(data.map((row) => String(row.look_id)));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+export async function saveUserCreatedLook(look: LookRow): Promise<void> {
+  if (!isSupabaseConfigured) return;
+
+  if (isValidUuid(look.user_id)) {
+    await ensureUserProfile(look.user_id, look.author_username);
+  }
+  const { data, error } = await supabase
+    .from('looks')
+    .upsert(
+      {
+        id: look.id,
+        user_id: look.user_id,
+        image_path: look.image_path,
+        is_human_verified: look.is_human_verified,
+        ai_confidence_score: look.ai_confidence_score,
+        subculture: look.subculture,
+        subculture_confidence_score: look.subculture_confidence_score,
+        extracted_regions: look.extracted_regions,
+        tags: look.tags,
+        description: look.description,
+        liked_by: look.liked_by || [],
+        comments: look.comments || [],
+        appeal_status: look.appeal_status || 'none',
+      },
+      { onConflict: 'id' }
+    )
+    .select('id');
+
+  if (error) {
+    throw new Error(`Error al guardar publicación en Supabase: ${error.message}`);
+  }
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error('Supabase bloqueó la inserción de la publicación por políticas RLS.');
+  }
+
+  notifyLookDataChanged({ type: 'created', lookId: look.id });
 }
 
 /**
@@ -547,7 +625,7 @@ export async function ensureUserProfile(
     created_at: new Date().toISOString(),
   };
 
-  if (!isSupabaseConfigured) {
+  if (!isSupabaseConfigured || !isValidUuid(userId)) {
     return fallbackProfile;
   }
 
@@ -591,11 +669,11 @@ export async function ensureUserProfile(
 export async function syncAccessibilityPrefsToProfile(
   userId: string,
   prefs: AccessibilityPrefs
-): Promise<void> {
-  if (!isSupabaseConfigured || !userId || userId.startsWith('demo-')) return;
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !isValidUuid(userId)) return false;
 
   try {
-    await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .update({
         accessibility_prefs: {
@@ -605,128 +683,70 @@ export async function syncAccessibilityPrefsToProfile(
           font_family_variant: prefs.font_family_variant,
           font_scale: prefs.font_scale,
           reduced_motion: prefs.reduced_motion,
+          assistive_voice_bar: prefs.assistive_voice_bar,
         },
       })
-      .eq('id', userId);
-  } catch {
-    // Ignore cloud sync errors; local AsyncStorage in AccessibilityContext already saved it
+      .eq('id', userId)
+      .select('id');
+
+    if (error || !Array.isArray(data) || data.length === 0) {
+      console.warn(
+        'No se pudo sincronizar accessibility_prefs en Supabase:',
+        error?.message || '0 filas actualizadas'
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Error al sincronizar accessibility_prefs:', err);
+    return false;
   }
 }
 
 /**
- * Fetches a single look by ID, hydrating image URLs, like status, and saved status.
+ * Fetches a single look by ID, hydrating image URLs, like status, and saved status directly from Supabase.
  */
 export async function fetchLookById(
   lookId: string,
   currentUserId?: string | null
 ): Promise<LookRow | null> {
-  // 1. In-memory user looks map (guaranteed synchronous availability)
-  if (IN_MEMORY_USER_LOOKS.has(lookId)) {
-    const memLook = IN_MEMORY_USER_LOOKS.get(lookId)!;
-    const overrides = await getLocalLookOverrides();
-    const isLikedByMe = currentUserId
-      ? (memLook.liked_by || []).includes(currentUserId)
-      : overrides.likedLookIds.includes(lookId);
-    const isSavedByMe = overrides.savedLookIds.includes(lookId);
-
-    return {
-      ...memLook,
-      resolved_image_url:
-        memLook.resolved_image_url || resolveLookImageUrl(memLook.image_path, memLook.id),
-      is_liked_by_me: isLikedByMe,
-      is_saved_by_me: isSavedByMe,
-      description: overrides.descriptionsByLookId[lookId] || memLook.description || '',
-      appeal_status: overrides.appealsByLookId[lookId] || memLook.appeal_status || 'none',
-      comments: overrides.commentsByLookId[lookId] || memLook.comments || [],
-    };
-  }
-
-  const overrides = await getLocalLookOverrides();
-
-  // 2. Check userCreatedLooks in AsyncStorage overrides
-  const localUserLook = (overrides.userCreatedLooks || []).find((item) => item.id === lookId);
-  if (localUserLook) {
-    const isLikedByMe = currentUserId
-      ? (localUserLook.liked_by || []).includes(currentUserId)
-      : overrides.likedLookIds.includes(lookId);
-    const isSavedByMe = overrides.savedLookIds.includes(lookId);
-
-    return {
-      ...localUserLook,
-      resolved_image_url:
-        localUserLook.resolved_image_url ||
-        resolveLookImageUrl(localUserLook.image_path, localUserLook.id),
-      is_liked_by_me: isLikedByMe,
-      is_saved_by_me: isSavedByMe,
-      description: overrides.descriptionsByLookId[lookId] || localUserLook.description || '',
-      appeal_status: overrides.appealsByLookId[lookId] || localUserLook.appeal_status || 'none',
-      comments: overrides.commentsByLookId[lookId] || localUserLook.comments || [],
-    };
-  }
-
-  // 3. Query Supabase (only if lookId matches standard UUID syntax)
-  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lookId);
-  if (isSupabaseConfigured && isUUID) {
+  if (isSupabaseConfigured && isValidUuid(lookId)) {
     try {
-      const { data, error } = await supabase
-        .from('looks')
-        .select('*')
-        .eq('id', lookId)
-        .maybeSingle();
+      const [{ data, error }, savedSet] = await Promise.all([
+        supabase
+          .from('looks')
+          .select('*')
+          .eq('id', lookId)
+          .maybeSingle(),
+        fetchSavedLookIdsForUser(currentUserId),
+      ]);
 
       if (!error && data) {
-        let isSavedByMe = false;
-        if (currentUserId && !currentUserId.startsWith('demo-')) {
-          const { data: savedRow } = await supabase
-            .from('saved_looks')
-            .select('look_id')
-            .eq('user_id', currentUserId)
-            .eq('look_id', lookId)
-            .maybeSingle();
-          isSavedByMe = Boolean(savedRow);
-        } else {
-          isSavedByMe = overrides.savedLookIds.includes(lookId);
-        }
-
-        const likedBy = Array.isArray(data.liked_by) ? data.liked_by : [];
-        const isLikedByMe = currentUserId
-          ? likedBy.includes(currentUserId)
-          : overrides.likedLookIds.includes(lookId);
-
-        return {
-          ...(data as LookRow),
-          resolved_image_url: resolveLookImageUrl(data.image_path, data.id),
-          is_saved_by_me: isSavedByMe,
-          is_liked_by_me: isLikedByMe,
-          liked_by: likedBy,
-          description: overrides.descriptionsByLookId[lookId] || data.description || '',
-          appeal_status: overrides.appealsByLookId[lookId] || data.appeal_status || 'none',
-          comments: overrides.commentsByLookId[lookId] || data.comments || [],
-        };
+        const authorMap = await fetchProfileUsernamesMap([String(data.user_id)]);
+        return hydrateLookRowFromDb(data, {
+          currentUserId,
+          savedLookIds: savedSet,
+          authorUsernames: authorMap,
+          defaultAuthor: 'auras',
+        });
       }
     } catch {
       // Fallback below
     }
   }
 
-  // 4. Fallback mirror search
+  // Fallback mirror search
   const found = REAL_SUPABASE_MIRROR_LOOKS.find((item) => item.id === lookId);
   if (!found) return null;
-
-  const isLikedByMe = currentUserId
-    ? found.liked_by.includes(currentUserId)
-    : overrides.likedLookIds.includes(lookId);
-
-  const isSavedByMe = overrides.savedLookIds.includes(lookId);
 
   return {
     ...found,
     resolved_image_url: resolveLookImageUrl(found.image_path, found.id),
-    is_liked_by_me: isLikedByMe,
-    is_saved_by_me: isSavedByMe,
-    description: overrides.descriptionsByLookId[lookId] || found.description,
-    appeal_status: overrides.appealsByLookId[lookId] || found.appeal_status || 'none',
-    comments: overrides.commentsByLookId[lookId] || found.comments || [],
+    is_liked_by_me: Boolean(currentUserId && found.liked_by.includes(currentUserId)),
+    is_saved_by_me: false,
+    description: found.description,
+    appeal_status: found.appeal_status || 'none',
+    comments: found.comments || [],
   };
 }
 
@@ -769,41 +789,131 @@ export async function fetchProductsByIds(productIds: number[]): Promise<ProductR
 }
 
 /**
- * Fetches similar verified looks sharing subculture or similar facial color families.
+ * Fetches similar verified looks sharing subculture directly from Supabase.
+ * Prioritizes matching aesthetic subculture, color harmony in CIELAB, and author usernames.
  */
 export async function fetchSimilarLooks(
   currentLook: LookRow,
-  limit: number = 4
+  limit: number = 4,
+  currentUserId?: string | null
 ): Promise<LookRow[]> {
-  const overrides = await getLocalLookOverrides();
-  const subcultures = currentLook.subculture || [];
+  const subcultures = Array.isArray(currentLook.subculture)
+    ? currentLook.subculture
+    : typeof currentLook.subculture === 'string'
+    ? [currentLook.subculture]
+    : [];
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentLook.id);
 
   if (isSupabaseConfigured && isUUID) {
     try {
-      const { data, error } = await supabase
-        .from('looks')
-        .select('*')
-        .eq('is_human_verified', true)
-        .neq('id', currentLook.id)
-        .limit(limit * 2);
+      const savedSet = await fetchSavedLookIdsForUser(currentUserId);
 
-      if (!error && Array.isArray(data) && data.length > 0) {
-        // Sort by matching subculture first
-        const sorted = data.sort((a, b) => {
-          const aMatch = (a.subculture || []).some((s: string) => (subcultures as string[]).includes(s));
-          const bMatch = (b.subculture || []).some((s: string) => (subcultures as string[]).includes(s));
-          if (aMatch && !bMatch) return -1;
-          if (!aMatch && bMatch) return 1;
-          return 0;
+      let candidates: any[] = [];
+
+      // Strategy 1: Query looks sharing the exact subcultures in Supabase
+      if (subcultures.length > 0) {
+        try {
+          const { data: matchedSubs } = await supabase
+            .from('looks')
+            .select('*')
+            .eq('is_human_verified', true)
+            .neq('id', currentLook.id)
+            .overlaps('subculture', subcultures)
+            .limit(30);
+
+          if (Array.isArray(matchedSubs) && matchedSubs.length > 0) {
+            candidates = [...matchedSubs];
+          }
+        } catch {
+          // If overlaps query fails on specific schema, fallback to broad query below
+        }
+      }
+
+      // Strategy 2: If fewer candidates than limit, fetch broader pool of verified human looks
+      if (candidates.length < limit * 3) {
+        const existingIds = new Set([currentLook.id, ...candidates.map((c) => String(c.id))]);
+        const { data: broadData } = await supabase
+          .from('looks')
+          .select('*')
+          .eq('is_human_verified', true)
+          .neq('id', currentLook.id)
+          .limit(60);
+
+        if (Array.isArray(broadData)) {
+          for (const item of broadData) {
+            if (!existingIds.has(String(item.id))) {
+              candidates.push(item);
+              existingIds.add(String(item.id));
+            }
+          }
+        }
+      }
+
+      if (candidates.length > 0) {
+        // Score similarity dynamically
+        const targetSubsSet = new Set(subcultures.map((s) => s.toLowerCase().trim()));
+        const targetRegions = currentLook.extracted_regions || {};
+
+        const scored = candidates.map((item) => {
+          let score = 0;
+          const itemSubs = Array.isArray(item.subculture)
+            ? (item.subculture as string[])
+            : typeof item.subculture === 'string'
+            ? [item.subculture]
+            : [];
+
+          // 1. Matching subculture (+1000 pts per match to strictly separate styles)
+          for (const s of itemSubs) {
+            if (targetSubsSet.has(s.toLowerCase().trim())) {
+              score += 1000;
+            }
+          }
+
+          // 2. Matching facial zone color (lips and eyelids)
+          const itemRegions = item.extracted_regions || {};
+          if (targetRegions.lips?.hex_value && itemRegions.lips?.hex_value) {
+            if (targetRegions.lips.hex_value.toLowerCase() === itemRegions.lips.hex_value.toLowerCase()) {
+              score += 50;
+            }
+          }
+          if (targetRegions.eyelids?.hex_value && itemRegions.eyelids?.hex_value) {
+            if (targetRegions.eyelids.hex_value.toLowerCase() === itemRegions.eyelids.hex_value.toLowerCase()) {
+              score += 40;
+            }
+          }
+
+          // 3. Shared tags
+          const targetTagsSet = new Set((currentLook.tags || []).map((t) => t.toLowerCase().trim()));
+          const itemTags = Array.isArray(item.tags) ? item.tags : [];
+          for (const t of itemTags) {
+            if (targetTagsSet.has(String(t).toLowerCase().trim())) {
+              score += 20;
+            }
+          }
+
+          // Slight random jitter for looks with identical match tier so it's dynamic
+          score += Math.random() * 10;
+
+          return { item, score };
         });
 
-        return sorted.slice(0, limit).map((item) => ({
-          ...(item as LookRow),
-          resolved_image_url: resolveLookImageUrl(item.image_path, item.id),
-          is_liked_by_me: overrides.likedLookIds.includes(item.id),
-          is_saved_by_me: overrides.savedLookIds.includes(item.id),
-        }));
+        // Sort descending by similarity score
+        scored.sort((a, b) => b.score - a.score);
+
+        const selected = scored.slice(0, limit).map((s) => s.item);
+
+        // Fetch author usernames from public.profiles via shared helper
+        const authorIds = selected.map((s) => String(s.user_id || '')).filter(Boolean);
+        const profileMap = await fetchProfileUsernamesMap(authorIds);
+
+        return selected.map((item) =>
+          hydrateLookRowFromDb(item, {
+            currentUserId,
+            savedLookIds: savedSet,
+            authorUsernames: profileMap,
+            defaultAuthor: 'usuario_auras',
+          })
+        );
       }
     } catch {
       // Fallback below
@@ -826,52 +936,140 @@ export async function fetchSimilarLooks(
   return sorted.slice(0, limit).map((item) => ({
     ...item,
     resolved_image_url: resolveLookImageUrl(item.image_path, item.id),
-    is_liked_by_me: overrides.likedLookIds.includes(item.id),
-    is_saved_by_me: overrides.savedLookIds.includes(item.id),
+    is_liked_by_me: Boolean(currentUserId && item.liked_by.includes(currentUserId)),
+    is_saved_by_me: false,
   }));
 }
 
 /**
- * Updates a look's description in Supabase and local overrides.
- * Fulfills 2ndPhaseProposal.pdf Section V.D (Editable AI-suggested alt-text).
+ * Updates a look's description (Alt-Text) in Supabase and verifies that the row was updated.
  */
 export async function updateLookDescription(lookId: string, description: string): Promise<void> {
-  const overrides = await getLocalLookOverrides();
-  overrides.descriptionsByLookId[lookId] = description;
-  await saveLocalLookOverrides(overrides);
-
-  if (isSupabaseConfigured) {
-    try {
-      await supabase
-        .from('looks')
-        .update({ description })
-        .eq('id', lookId);
-    } catch {
-      // Local override persists offline
-    }
+  if (!isSupabaseConfigured || !isValidUuid(lookId)) {
+    return;
   }
+
+  const { data, error } = await supabase
+    .from('looks')
+    .update({ description })
+    .eq('id', lookId)
+    .select('id');
+
+  if (error) {
+    throw new Error(error.message || 'No se pudo guardar la descripción en Supabase.');
+  }
+
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error(
+      'Supabase bloqueó al actualizar la descripción (0 filas afectadas por RLS). Ejecuta docs/supabase-rls-and-rpcs.sql en Supabase.'
+    );
+  }
+
+  notifyLookDataChanged({ type: 'description', lookId, description });
 }
 
 /**
- * Requests a human appeal for a look rejected by the Anti-AI filter.
- * Sets appeal_status = 'pending' in Supabase and local overrides.
- * Fulfills Project Proposal.pdf Section IV.C (Mitigation of AI false positives).
+ * Requests a human appeal for a look rejected by the Anti-AI filter directly in Supabase.
  */
 export async function requestLookAppeal(lookId: string): Promise<void> {
-  const overrides = await getLocalLookOverrides();
-  overrides.appealsByLookId[lookId] = 'pending';
-  await saveLocalLookOverrides(overrides);
-
-  if (isSupabaseConfigured) {
-    try {
-      await supabase
-        .from('looks')
-        .update({ appeal_status: 'pending' })
-        .eq('id', lookId);
-    } catch {
-      // Local override persists offline
-    }
+  if (!isSupabaseConfigured || !isValidUuid(lookId)) {
+    throw new Error('Supabase no está configurado o el ID de publicación es inválido.');
   }
+
+  const { data, error } = await supabase
+    .from('looks')
+    .update({ appeal_status: 'pending' })
+    .eq('id', lookId)
+    .select('id');
+
+  if (error) {
+    throw new Error(error.message || 'No se pudo registrar la apelación en Supabase.');
+  }
+
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error(
+      'Supabase bloqueó el registro de la apelación (0 filas afectadas por RLS). Ejecuta docs/supabase-rls-and-rpcs.sql en Supabase.'
+    );
+  }
+
+  notifyLookDataChanged({ type: 'appeal', lookId, appealStatus: 'pending' });
+}
+
+/**
+ * Adds a comment directly to `public.looks.comments` in Supabase.
+ * Prioriza el RPC atómico `add_look_comment` (SECURITY DEFINER) y usa fallback con verificación de filas.
+ */
+export async function addCommentToLook(
+  lookId: string,
+  comment: LookCommentItem
+): Promise<{ success: boolean; comments: LookCommentItem[] }> {
+  if (!isSupabaseConfigured) {
+    throw new Error('Supabase no está configurado');
+  }
+
+  if (!isValidUuid(lookId)) {
+    throw new Error('ID de publicación inválido');
+  }
+
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('add_look_comment', {
+    p_look_id: lookId,
+    p_comment: comment,
+  });
+
+  if (!rpcErr && rpcData) {
+    const rawComments = Array.isArray(rpcData)
+      ? rpcData
+      : (rpcData as Record<string, unknown>).comments;
+    const confirmedComments = Array.isArray(rawComments)
+      ? (rawComments as LookCommentItem[])
+      : [comment];
+    notifyLookDataChanged({ type: 'comment', lookId, comments: confirmedComments });
+    return { success: true, comments: confirmedComments };
+  }
+
+  if (rpcErr && !isRpcMissingError(rpcErr)) {
+    throw new Error(rpcErr.message || 'Error al guardar el comentario en la base de datos');
+  }
+
+  // Fallback si la función RPC aún no ha sido creada en Supabase
+  const { data, error: selectErr } = await supabase
+    .from('looks')
+    .select('comments')
+    .eq('id', lookId)
+    .single();
+
+  if (selectErr) {
+    throw new Error(selectErr.message || 'Error al obtener comentarios de la base de datos');
+  }
+
+  const dbExisting: LookCommentItem[] = Array.isArray(data?.comments) ? data.comments : [];
+  const mergedDbComments = dbExisting.some((c) => c.id === comment.id)
+    ? dbExisting
+    : [...dbExisting, comment];
+
+  const { data: updatedRows, error: updateErr } = await supabase
+    .from('looks')
+    .update({ comments: mergedDbComments })
+    .eq('id', lookId)
+    .select('id, comments');
+
+  if (updateErr) {
+    throw new Error(updateErr.message || 'Error al guardar el comentario en la base de datos');
+  }
+
+  if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+    throw new Error(
+      'Supabase bloqueó el envío del comentario (0 filas afectadas por RLS). Ejecuta docs/supabase-rls-and-rpcs.sql en Supabase.'
+    );
+  }
+
+  const confirmedComments = Array.isArray(updatedRows[0].comments)
+    ? (updatedRows[0].comments as LookCommentItem[])
+    : mergedDbComments;
+
+  notifyLookDataChanged({ type: 'comment', lookId, comments: confirmedComments });
+
+  return { success: true, comments: confirmedComments };
 }
 
 

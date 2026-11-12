@@ -23,17 +23,20 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ContextualAuthPrompt } from '@/components/auth/contextual-auth-prompt';
-import { AntiAiTransparencyCard } from '@/components/look/anti-ai-transparency-card';
+import { AntiAiTransparencyModal } from '@/components/look/anti-ai-transparency-card';
+import { CommentsSectionCollapsible } from '@/components/look/comments-section-collapsible';
 import { ProductDetailModal } from '@/components/look/product-detail-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { AccessiblePressable } from '@/components/ui/accessible-pressable';
 import { ColorSwatchBadge } from '@/components/ui/color-swatch-badge';
 import { StepZoomImage } from '@/components/ui/step-zoom-image';
+import { VisualAlertBanner } from '@/components/ui/visual-alert-banner';
 import { MaxContentWidth, MinTouchTargetSize, Spacing } from '@/constants/theme';
 import { useAccessibility } from '@/hooks/use-accessibility';
 import { useLookDetail } from '@/hooks/use-look-detail';
 import { useTheme } from '@/hooks/use-theme';
+import { resolveLookImageUrl } from '@/services/supabase';
 import {
   FACIAL_REGIONS,
   FACIAL_REGION_LABELS,
@@ -64,6 +67,8 @@ export default function LookDetailScreen() {
     look,
     isLoading,
     errorMessage,
+    actionErrorMessage,
+    dismissActionError,
     isLiked,
     likeCount,
     isSaved,
@@ -77,9 +82,13 @@ export default function LookDetailScreen() {
     selectedProduct,
     setSelectedProduct,
     similarLooks,
+    comments,
+    addComment,
+    isAddingComment,
   } = useLookDetail(lookId);
 
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [showAntiAiModal, setShowAntiAiModal] = useState<boolean>(false);
   const [activeProductCtx, setActiveProductCtx] = useState<{
     product: ProductRow;
     regionKey: FacialRegionKey;
@@ -162,6 +171,10 @@ export default function LookDetailScreen() {
 
   const subcultures = look.subculture || [];
   const regions = look.extracted_regions || {};
+  const humanScorePercent = Math.max(
+    1,
+    Math.min(99, Math.round((1 - (look.ai_confidence_score ?? 0)) * 100))
+  );
 
   return (
     <ThemedView style={[styles.mainContainer, { paddingTop: Math.max(insets.top, 12) }]}>
@@ -213,17 +226,23 @@ export default function LookDetailScreen() {
           {/* 1. Step-Zoom Photography */}
           <View style={styles.imageCardWrapper}>
             <StepZoomImage
-              uri={
-                look.resolved_image_url ||
-                look.image_path ||
-                'https://picsum.photos/seed/auras/800/1000'
-              }
+              uri={look.resolved_image_url || resolveLookImageUrl(look.image_path) || ''}
               height={400}
               altText={`Fotografía de maquillaje estilo ${subcultures.join(
                 ', '
               )} de @${look.author_username || 'auras'}`}
             />
           </View>
+
+          {actionErrorMessage ? (
+            <VisualAlertBanner
+              variant="error"
+              title="Error al guardar cambio"
+              message={actionErrorMessage}
+              onDismiss={dismissActionError}
+              style={{ marginBottom: Spacing.three }}
+            />
+          ) : null}
 
           {/* 2. Accessible Action Bar (Like, Save, Share, TTS Audio) */}
           <View
@@ -239,9 +258,8 @@ export default function LookDetailScreen() {
             <AccessiblePressable
               onPress={handleLikePress}
               accessibilityRole="button"
-              accessibilityLabel={`Me gusta. ${likeCount} personas les gusta este look. ${
-                isLiked ? 'Marcado como me gusta.' : 'No marcado.'
-              }`}
+              accessibilityLabel={`Me gusta. ${likeCount} personas les gusta este look. ${isLiked ? 'Marcado como me gusta.' : 'No marcado.'
+                }`}
               accessibilityHint="Toca para alternar me gusta. Requiere inicio de sesión."
               style={[
                 styles.actionBtn,
@@ -263,9 +281,8 @@ export default function LookDetailScreen() {
             <AccessiblePressable
               onPress={handleSavePress}
               accessibilityRole="button"
-              accessibilityLabel={`Guardar look en tu perfil. ${
-                isSaved ? 'Guardado actualmente.' : 'No guardado.'
-              }`}
+              accessibilityLabel={`Guardar look en tu perfil. ${isSaved ? 'Guardado actualmente.' : 'No guardado.'
+                }`}
               accessibilityHint="Toca para guardar o quitar de tu colección."
               style={[
                 styles.actionBtn,
@@ -287,9 +304,8 @@ export default function LookDetailScreen() {
             <AccessiblePressable
               onPress={speakLookDescription}
               accessibilityRole="button"
-              accessibilityLabel={`Lectura de audio en voz alta. ${
-                isSpeaking ? 'Reproduciendo audio, toca para detener.' : 'Toca para escuchar descripción.'
-              }`}
+              accessibilityLabel={`Lectura de audio en voz alta. ${isSpeaking ? 'Reproduciendo audio, toca para detener.' : 'Toca para escuchar descripción.'
+                }`}
               accessibilityHint="Lee la descripción del look y los tonos de cosméticos detectados."
               style={[
                 styles.actionBtn,
@@ -341,32 +357,68 @@ export default function LookDetailScreen() {
             ))}
           </View>
 
-          {/* 4. Anti-AI Transparency Card */}
-          <AntiAiTransparencyCard
-            aiConfidenceScore={look.ai_confidence_score}
-            authorUsername={look.author_username}
-            subcultureConfidenceScore={look.subculture_confidence_score}
-          />
+          {/* 4. Creator Info & Look Description */}
+          <View
+            style={[
+              styles.descriptionCard,
+              {
+                backgroundColor: theme.backgroundElement,
+                borderColor: theme.border,
+              },
+            ]}
+          >
+            {/* Creator Header with Discreet Anti-AI Verification Pill */}
+            <View style={styles.authorHeaderRow}>
+              <View style={styles.authorInfoGroup}>
+                <ThemedText style={styles.authorAvatarBadge}>👤</ThemedText>
+                <View>
+                  <ThemedText style={[styles.authorUsername, { color: theme.text, fontWeight: 'bold' }]}>
+                    @{look.author_username || 'auras'}
+                  </ThemedText>
+                  <ThemedText style={[styles.authorSubtitle, { color: theme.textSecondary }]}>
+                    Creador de la publicación
+                  </ThemedText>
+                </View>
+              </View>
 
-          {/* 5. Look Description */}
-          {look.description ? (
-            <View
-              style={[
-                styles.descriptionCard,
-                {
-                  backgroundColor: theme.backgroundElement,
-                  borderColor: theme.border,
-                },
-              ]}
-            >
-              <ThemedText style={[styles.descTitle, { color: theme.textSecondary }]}>
-                Descripción del Look
-              </ThemedText>
-              <ThemedText style={[styles.descBody, { color: theme.text }]}>
-                {look.description}
-              </ThemedText>
+              {/* Discreet button to open Anti-AI verification popup */}
+              <AccessiblePressable
+                onPress={() => setShowAntiAiModal(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Verificado ${humanScorePercent}% humano. Toca para ver reporte de autenticidad anti-IA.`}
+                accessibilityHint="Abre una ventana con el análisis forense de la imagen"
+                style={[
+                  styles.antiAiButton,
+                  {
+                    backgroundColor: high_contrast ? '#000000' : '#DCFCE7',
+                    borderColor: high_contrast ? '#FFFFFF' : '#86EFAC',
+                  },
+                ]}
+              >
+                <ThemedText style={styles.antiAiButtonIcon}>🛡️</ThemedText>
+                <ThemedText
+                  style={[
+                    styles.antiAiButtonText,
+                    { color: high_contrast ? '#FFFFFF' : '#166534', fontWeight: 'bold' },
+                  ]}
+                >
+                  {humanScorePercent}% Humano
+                </ThemedText>
+              </AccessiblePressable>
             </View>
-          ) : null}
+
+            {/* Description Body */}
+            {look.description ? (
+              <View style={styles.descBodyWrapper}>
+                <ThemedText style={[styles.descTitle, { color: theme.textSecondary }]}>
+                  Descripción del Look
+                </ThemedText>
+                <ThemedText style={[styles.descBody, { color: theme.text }]}>
+                  {look.description}
+                </ThemedText>
+              </View>
+            ) : null}
+          </View>
 
           {/* 6. Recommended Products by Facial Region */}
           <View style={styles.productsSection}>
@@ -428,11 +480,9 @@ export default function LookDetailScreen() {
                             )
                           }
                           accessibilityRole="button"
-                          accessibilityLabel={`Cosmético: ${product.product_name} de ${
-                            product.brand || 'Auras'
-                          }. Tono ${product.shade_name || ''}. Precio $${
-                            product.price_usd ? product.price_usd.toFixed(2) : ''
-                          } USD. Toca para ver detalles completos.`}
+                          accessibilityLabel={`Cosmético: ${product.product_name} de ${product.brand || 'Auras'
+                            }. Tono ${product.shade_name || ''}. Precio $${product.price_usd ? product.price_usd.toFixed(2) : ''
+                            } USD. Toca para ver detalles completos.`}
                           accessibilityHint="Abre la ventana con especificaciones, imagen y coordenadas CIELAB del producto"
                           style={[
                             styles.productChip,
@@ -485,7 +535,7 @@ export default function LookDetailScreen() {
                                 : ''}
                             </ThemedText>
                             <ThemedText style={[styles.viewDetailsText, { color: theme.primary }]}>
-                              Ver más 🔍
+                              Detalles
                             </ThemedText>
                           </View>
                         </AccessiblePressable>
@@ -501,7 +551,18 @@ export default function LookDetailScreen() {
             })}
           </View>
 
-          {/* 7. Similar Looks Mini-Feed */}
+          {/* 7. Community Comments (WCAG 2.4.1 Bypass Blocks via AccessibleCollapsible) */}
+          <View style={styles.commentsSection}>
+            <CommentsSectionCollapsible
+              comments={comments}
+              onAddComment={addComment}
+              isAddingComment={isAddingComment}
+              onRequireAuth={() => setShowAuthModal(true)}
+              defaultExpanded={false}
+            />
+          </View>
+
+          {/* 8. Similar Looks Mini-Feed */}
           {similarLooks.length > 0 && (
             <View style={styles.similarSection}>
               <View style={styles.sectionHeader}>
@@ -532,10 +593,7 @@ export default function LookDetailScreen() {
                   >
                     <Image
                       source={{
-                        uri:
-                          item.resolved_image_url ||
-                          item.image_path ||
-                          'https://picsum.photos/seed/similar/400/500',
+                        uri: item.resolved_image_url || resolveLookImageUrl(item.image_path),
                       }}
                       style={styles.similarImage}
                       resizeMode="cover"
@@ -570,6 +628,15 @@ export default function LookDetailScreen() {
         detectedHex={activeProductCtx?.detectedHex}
         visible={Boolean(activeProductCtx)}
         onClose={() => setActiveProductCtx(null)}
+      />
+
+      {/* 9. Anti-AI Transparency Breakdown Modal */}
+      <AntiAiTransparencyModal
+        visible={showAntiAiModal}
+        onClose={() => setShowAntiAiModal(false)}
+        aiConfidenceScore={look.ai_confidence_score}
+        authorUsername={look.author_username}
+        subcultureConfidenceScore={look.subculture_confidence_score}
       />
 
       {/* 9. Contextual Auth Modal for Gradual Engagement */}
@@ -766,6 +833,47 @@ const styles = StyleSheet.create({
     padding: Spacing.two,
     borderRadius: 14,
     borderWidth: 1,
+    gap: Spacing.two,
+  },
+  authorHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: Spacing.one,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(150, 150, 150, 0.25)',
+  },
+  authorInfoGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+  },
+  authorAvatarBadge: {
+    fontSize: 24,
+  },
+  authorUsername: {
+    fontSize: 15,
+  },
+  authorSubtitle: {
+    fontSize: 11,
+  },
+  antiAiButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 6,
+    borderRadius: 9999,
+    borderWidth: 1,
+    minHeight: 34,
+  },
+  antiAiButtonIcon: {
+    fontSize: 13,
+  },
+  antiAiButtonText: {
+    fontSize: 12,
+  },
+  descBodyWrapper: {
     gap: 4,
   },
   descTitle: {
@@ -877,6 +985,10 @@ const styles = StyleSheet.create({
   noProductsText: {
     fontSize: 12,
     fontStyle: 'italic',
+  },
+  commentsSection: {
+    marginTop: Spacing.two,
+    marginBottom: Spacing.two,
   },
   similarSection: {
     gap: Spacing.two,

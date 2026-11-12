@@ -19,8 +19,6 @@ import {
 import { ProfileRow } from '@/types/database';
 import { announceStatus } from '@/utils/a11y-feedback';
 
-const BOT_PROFILE_ID = '2fb75323-525b-482a-bf38-e0ea63275a04';
-
 export interface AuthContextValue {
   session: Session | null;
   user: User | null;
@@ -50,22 +48,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   const hydratedProfileIdRef = useRef<string | null>(null);
+  const skipNextSyncRef = useRef<boolean>(false);
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
+  const isDemoSessionRef = useRef(isDemoSession);
+  isDemoSessionRef.current = isDemoSession;
 
   const loadUserProfile = useCallback(
     async (targetUser: User) => {
       const customUsername =
         (targetUser.user_metadata?.username as string | undefined) || targetUser.email;
       const loadedProfile = await ensureUserProfile(targetUser.id, customUsername);
-      setProfile(loadedProfile);
 
-      if (
+      const hasRemotePrefs =
         loadedProfile.accessibility_prefs &&
-        hydratedProfileIdRef.current !== loadedProfile.id
-      ) {
-        hydratedProfileIdRef.current = loadedProfile.id;
+        typeof loadedProfile.accessibility_prefs === 'object' &&
+        Object.keys(loadedProfile.accessibility_prefs).length > 0;
+
+      if (hasRemotePrefs && hydratedProfileIdRef.current !== loadedProfile.id) {
         await hydrateFromProfilePrefs(
           loadedProfile.accessibility_prefs as Record<string, unknown>
         );
+        skipNextSyncRef.current = true;
+        hydratedProfileIdRef.current = loadedProfile.id;
+        setProfile(loadedProfile);
+      } else if (hydratedProfileIdRef.current !== loadedProfile.id) {
+        hydratedProfileIdRef.current = loadedProfile.id;
+        setProfile(loadedProfile);
+        void syncAccessibilityPrefsToProfile(loadedProfile.id, prefsRef.current);
+      } else {
+        setProfile(loadedProfile);
       }
     },
     [hydrateFromProfilePrefs]
@@ -107,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (nextUser) {
         setIsDemoSession(false);
         void loadUserProfile(nextUser);
-      } else if (!isDemoSession) {
+      } else if (!isDemoSessionRef.current) {
         setProfile(null);
         hydratedProfileIdRef.current = null;
       }
@@ -117,13 +129,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isMounted = false;
       authListener.subscription.unsubscribe();
     };
-  }, [isDemoSession, loadUserProfile]);
+  }, [loadUserProfile]);
 
   // Keep `public.profiles.accessibility_prefs` synced whenever the user updates accessibility settings
   useEffect(() => {
-    if (!profile?.id || isDemoSession || !isSupabaseConfigured) return;
-    void syncAccessibilityPrefsToProfile(profile.id, prefs);
-  }, [prefs, profile?.id, isDemoSession]);
+    const activeUserId = profile?.id || user?.id;
+    if (!activeUserId || activeUserId.startsWith('demo-') || !isSupabaseConfigured) return;
+    if (hydratedProfileIdRef.current !== activeUserId) return;
+    if (skipNextSyncRef.current) {
+      skipNextSyncRef.current = false;
+      return;
+    }
+    void syncAccessibilityPrefsToProfile(activeUserId, prefs);
+  }, [prefs, profile?.id, user?.id]);
 
   const clearAuthError = useCallback(() => {
     setAuthError(null);
@@ -179,8 +197,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUpWithEmail = useCallback(
     async (email: string, password: string, username: string): Promise<boolean> => {
       setAuthError(null);
-      const cleanEmail = email.trim();
-      const cleanUsername = username.trim().replace(/[^a-zA-Z0-9_]/g, '_');
+      let cleanEmail = email.trim().toLowerCase();
+      if (!cleanEmail.includes('@')) {
+        cleanEmail = `${cleanEmail}@aurasmatch.com`;
+      }
+      const cleanUsername = username.trim().replace(/[^a-zA-Z0-9_]/g, '_') || 'usuario';
 
       if (!cleanEmail || !password || !cleanUsername) {
         setAuthError('Completa nombre de usuario, correo electrónico y contraseña.');
@@ -193,15 +214,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!isSupabaseConfigured) {
-        setAuthError(
-          'Falta configurar EXPO_PUBLIC_SUPABASE_ANON_KEY en frontend/.env. Puedes usar el botón "Probar con cuenta @aurasmatch_bot" mientras pegas la llave.'
-        );
+        setAuthError('Falta configurar Supabase en el frontend.');
         return false;
       }
 
       setIsLoading(true);
       try {
-        const { data, error } = await supabase.auth.signUp({
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
           email: cleanEmail,
           password,
           options: {
@@ -209,20 +228,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           },
         });
 
-        if (error) {
-          setAuthError(`No se pudo crear la cuenta: ${error.message}`);
+        if (signUpErr) {
+          const msg = signUpErr.message?.toLowerCase() || '';
+          if (msg.includes('already') || msg.includes('registered')) {
+            setAuthError('Este correo electrónico ya está registrado. Intenta iniciar sesión.');
+          } else {
+            setAuthError(`No se pudo crear la cuenta: ${signUpErr.message}`);
+          }
           return false;
         }
 
-        if (data.user) {
-          await loadUserProfile(data.user);
-          announceStatus(`Cuenta creada para ${cleanUsername}`);
+        const targetUser = signUpData.user;
+        const createdSession = signUpData.session;
+
+        if (!targetUser) {
+          setAuthError('No se pudo completar el registro en Supabase.');
+          return false;
         }
+
+        if (!createdSession) {
+          setAuthError(
+            'Cuenta creada. Revisa tu correo electrónico para confirmar tu cuenta antes de iniciar sesión (o desactiva Confirm Email en Supabase Auth para acceso inmediato).'
+          );
+          return false;
+        }
+
+        setSession(createdSession);
+        setUser(targetUser);
+        setIsDemoSession(false);
+
+        // Ensure profile row exists in public.profiles
+        const createdProfile = await ensureUserProfile(targetUser.id, cleanUsername);
+        setProfile(createdProfile);
+        await loadUserProfile(targetUser);
+
+        announceStatus(`Cuenta creada y registrada para @${cleanUsername}`);
         return true;
       } catch (err) {
         setAuthError(
           err instanceof Error
-            ? `Error de red al registrarse: ${err.message}`
+            ? `Error al registrarse: ${err.message}`
             : 'Error inesperado al registrarse.'
         );
         return false;
@@ -235,24 +280,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const continueWithBotDemoProfile = useCallback(async () => {
     setAuthError(null);
-    const botProfile = await ensureUserProfile(BOT_PROFILE_ID, 'aurasmatch_bot');
-    const demoUser = {
-      id: BOT_PROFILE_ID,
-      email: 'bot@aurasmatch.local',
-      app_metadata: {},
-      user_metadata: { username: 'aurasmatch_bot' },
-      aud: 'authenticated',
-      created_at: new Date().toISOString(),
-    } as User;
-    setUser(demoUser);
-    setProfile({
-      ...botProfile,
-      id: BOT_PROFILE_ID,
-      username: 'aurasmatch_bot',
-    });
-    setIsDemoSession(true);
-    announceStatus('Sesión iniciada con el perfil real aurasmatch_bot');
-  }, []);
+    if (!isSupabaseConfigured) {
+      setAuthError(
+        'Falta configurar EXPO_PUBLIC_SUPABASE_ANON_KEY en frontend/.env para conectar con @aurasmatch_bot.'
+      );
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: 'bot@aurasmatch.local',
+        password: 'AurasMatch2026!',
+      });
+
+      if (error || !data.user || !data.session) {
+        setAuthError(
+          error?.message
+            ? `No se pudo iniciar sesión con @aurasmatch_bot: ${error.message}`
+            : 'No se pudo autenticar la cuenta de demostración @aurasmatch_bot.'
+        );
+        return;
+      }
+
+      setSession(data.session);
+      setUser(data.user);
+      setIsDemoSession(false);
+      await loadUserProfile(data.user);
+      announceStatus('Sesión iniciada con la cuenta @aurasmatch_bot');
+    } catch (err) {
+      setAuthError(
+        err instanceof Error
+          ? `Error de red con @aurasmatch_bot: ${err.message}`
+          : 'Error inesperado al iniciar sesión con @aurasmatch_bot.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadUserProfile]);
 
   const signOut = useCallback(async () => {
     setAuthError(null);

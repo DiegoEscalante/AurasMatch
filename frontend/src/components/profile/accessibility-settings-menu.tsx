@@ -159,7 +159,7 @@ export function AccessibilitySettingsMenu({
           </View>
         </View>
 
-        {/* 4. Reducción de Movimiento y Restablecer */}
+        {/* 4. Reducción de Movimiento */}
         <View style={styles.controlBlock}>
           <ThemedText type="smallBold">
             4. Prevención de Fotosensibilidad y Animaciones:
@@ -185,6 +185,47 @@ export function AccessibilitySettingsMenu({
                 {prefs.reduced_motion
                   ? 'Reducir Animaciones: ACTIVADO'
                   : 'Reducir Animaciones: DESACTIVADO'}
+              </ThemedText>
+            </AccessiblePressable>
+          </View>
+        </View>
+
+        {/* 5. Asistencia Motriz y Comandos de Voz (2ndPhaseProposal.pdf Sección V.A.3 & WCAG 2.5.3) */}
+        <View style={styles.controlBlock}>
+          <ThemedText type="smallBold">
+            5. Control por Voz y Asistencia Motriz (Diversidad Física):
+          </ThemedText>
+          <ThemedText type="small" style={{ color: theme.textSecondary }}>
+            Despliega un botón flotante accesible (🎙️ / ♿) con paleta rápida de comandos. Compatible 1:1 con Voice Access (Android) y Voice Control (iOS) mediante etiquetas semánticas unificadas.
+          </ThemedText>
+          <View style={styles.rowWrap}>
+            <AccessiblePressable
+              accessibilityRole="switch"
+              accessibilityLabel="Activar o desactivar barra flotante de asistencia motriz y comandos de voz"
+              accessibilityState={{
+                checked: prefs.assistive_voice_bar,
+                selected: prefs.assistive_voice_bar,
+              }}
+              onPress={() =>
+                updateAccessibilityPrefs({
+                  assistive_voice_bar: !prefs.assistive_voice_bar,
+                })
+              }
+              style={[
+                styles.optionChip,
+                {
+                  backgroundColor: prefs.assistive_voice_bar
+                    ? theme.primary
+                    : theme.background,
+                  borderColor: theme.border,
+                },
+              ]}>
+              <ThemedText
+                type="smallBold"
+                style={prefs.assistive_voice_bar ? { color: theme.onPrimary } : undefined}>
+                {prefs.assistive_voice_bar
+                  ? '🎙️ Barra Asistida de Voz: ACTIVADA'
+                  : '🎙️ Barra Asistida de Voz: DESACTIVADA'}
               </ThemedText>
             </AccessiblePressable>
 

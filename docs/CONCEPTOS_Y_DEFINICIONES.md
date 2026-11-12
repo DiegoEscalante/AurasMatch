@@ -240,5 +240,43 @@ $$\text{Ratio de Contraste} = \frac{L_{\text{más claro}} + 0.05}{L_{\text{más 
   * En lugar de simplemente rechazar o silenciar al usuario, la aplicación exhibe un badge de alerta transparente explicando el motivo del filtro.
   * Habilita un botón accesible de acción táctil amplia ($\ge 48 \times 48\text{ dp}$): **"Solicitar Apelación Humana"**, el cual actualiza el registro en Supabase con `appeal_status = 'pending'`, notificando al usuario que un moderador humano verificará la autenticidad de su trabajo artístico para integrarlo al feed.
 
+---
+
+## Nivel 11: Comentarios Desplegables, Control por Voz y Asistencia Motriz (Fase 08)
+
+### 35. Supresión de Bloques Repetitivos en Comentarios Comunitarios (`AccessibleCollapsible` & WCAG 2.4.1)
+* **El problema de navegación accesible:**
+  * En una pantalla de detalle estilo Pinterest, una sección de comentarios abierta por defecto con decenas de opiniones crea una barrera infranqueable de fatiga táctil y cognitiva. Un usuario ciego con *TalkBack* o *VoiceOver* se ve forzado a deslizar el dedo cientos de veces por cada comentario individual antes de poder llegar a las publicaciones similares al final de la pantalla.
+* **Implementación en [`comments-section-collapsible.tsx`](../frontend/src/components/look/comments-section-collapsible.tsx):**
+  * La sección utiliza el componente atómico [`AccessibleCollapsible`](../frontend/src/components/ui/collapsible.tsx) cerrado por defecto, informando el total de comentarios en su subtítulo accesible (*"3 comentarios"*).
+  * El usuario que solo desea explorar cosméticos o publicaciones similares puede saltar el bloque completo con un único desplazamiento (`Tab` o *swipe*), cumpliendo WCAG 2.4.1 (*Bypass Blocks*). Si decide interactuar, activa el desplegable para desplegar la lista y el formulario de envío.
+
+### 36. Formularios de Entrada sin Límite de Tiempo (WCAG 2.2.1 Timing Adjustable)
+* **Principio de tiempo ajustable:**
+  * Las pautas WCAG 2.2.1 exigen que los usuarios dispongan de tiempo suficiente para leer, escribir y completar tareas interactivas sin cierres de sesión intempestivos ni pérdida de datos por inactividad.
+* **Aplicación en AurasMatch:**
+  * El formulario de comentarios permite escribir opiniones sin ningún temporizador de expiración. Incorpora un contador visual y semántico de caracteres restantes ($\text{hasta } 300\text{ caracteres}$), validación de campos vacíos mediante [`VisualAlertBanner`](../frontend/src/components/ui/visual-alert-banner.tsx) y retroalimentación háptica y auditiva en cada envío exitoso.
+
+### 37. Coincidencia Visual y Programática de Etiquetas de Voz (WCAG 2.5.3 Label in Name & `2ndPhaseProposal.pdf` V.A.3)
+* **¿Cómo opera el Control por Voz nativo?**
+  * Los motores de control por voz del sistema operativo (*Voice Control* en iOS y *Voice Access* en Android) permiten a usuarios con discapacidades motrices severas controlar la interfaz diciendo en voz alta el nombre visual del botón.
+  * La pauta WCAG 2.5.3 (*Label in Name*) exige que el nombre programático accesible (`accessibilityLabel`) comience obligatoriamente con el mismo texto que el usuario lee visualmente en pantalla.
+* **Implementación en AurasMatch:**
+  * Todos los botones interactivos siguen una concordancia 1:1 estricta:
+    * Botón visual `"Publicar"` $\rightarrow$ `accessibilityLabel="Publicar"` o `"Publicar comentario"`.
+    * Botón visual `"Dar me gusta"` $\rightarrow$ `accessibilityLabel="Dar me gusta"`.
+    * Botón visual `"Guardar"` $\rightarrow$ `accessibilityLabel="Guardar"`.
+    * Botón visual `"Escuchar"` $\rightarrow$ `accessibilityLabel="Escuchar descripción de audio"`.
+  * Gracias a esta convención, un usuario que diga *"Toca Publicar"* en su teléfono móvil activará el componente sin ambigüedades ni fallos de foco.
+
+### 38. Paleta Flotante de Asistencia Motriz y Demostración en Vivo (`AssistiveVoiceBar`)
+* **Reto pedagógico y de sustentación:**
+  * Durante la defensa técnica oral (40% de la nota) y la demostración en vivo (10% de la nota) estipuladas en la Rúbrica de la Fase 3, el profesor evaluador puede requerir evidenciar la operación de los comandos de voz en un entorno de prueba donde los servicios nativos de reconocimiento de voz del sistema no estén configurados (por ejemplo, en un emulador de desarrollo o en un navegador web).
+* **Solución en [`assistive-voice-bar.tsx`](../frontend/src/components/ui/assistive-voice-bar.tsx):**
+  * Incorpora un control activable desde el Menú de Opciones de Accesibilidad en el Perfil de Usuario.
+  * Al encenderse, despliega un botón flotante accesible ($\ge 48 \times 48\text{ dp}$, con iconos $\text{🎙️ } \♿$) anclado en la esquina inferior.
+  * Al pulsarlo, abre una paleta de atajos asistidos que ejecutan directamente las acciones de navegación y simulan las órdenes de voz (*"Ir al Feed"*, *"Subir Look"*, *"Mi Perfil"*, *"Escuchar Pantalla"*, *"Dar me gusta"*, *"Guardar"*), emitiendo vibración háptica y anuncios por voz mediante síntesis accesible (`announceStatus`).
+  * Incluye una guía didáctica desplegable que explica detalladamente la equivalencia exacta de las frases para iOS *Voice Control* y Android *Voice Access*.
+
 
 

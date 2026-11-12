@@ -12,6 +12,7 @@
 import { Image, ImageContentFit } from 'expo-image';
 import React, { useCallback, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   GestureResponderEvent,
   LayoutChangeEvent,
   PanResponder,
@@ -64,6 +65,8 @@ export function StepZoomImage({
   const theme = useTheme();
   const { prefs } = useAccessibility();
   const high_contrast = prefs.high_contrast;
+
+  const [isImageLoading, setIsImageLoading] = useState(true);
 
   // Zoom scale and pan offset
   const [scale, setScale] = useState<number>(1);
@@ -285,11 +288,20 @@ export function StepZoomImage({
         accessibilityLabel={`${altText}. Zoom actual: ${currentPercentage} por ciento.`}
         accessibilityHint="Realiza el gesto de pinza o toca dos veces para acercar; arrastra para explorar los bordes."
       >
+        {isImageLoading && (
+          <View style={styles.imageLoadingOverlay}>
+            <ActivityIndicator size="large" color={theme.primary} />
+          </View>
+        )}
+
         <Image
           source={{ uri }}
           accessibilityLabel={altText}
           contentFit={contentFit}
           transition={100}
+          onLoadStart={() => setIsImageLoading(true)}
+          onLoad={() => setIsImageLoading(false)}
+          onError={() => setIsImageLoading(false)}
           style={[
             styles.image,
             {
@@ -421,6 +433,16 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
   },
   discreetHintPill: {
     position: 'absolute',
