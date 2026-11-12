@@ -1,11 +1,12 @@
-import {
-  Tabs,
-  TabList,
-  TabListProps,
-  TabSlot,
-  TabTrigger,
-  TabTriggerSlotProps,
-} from 'expo-router/ui';
+/**
+ * Predictable 3-Tab Bottom Navigation Bar (Feed, Subir, Usuario).
+ * Uses Expo Router's `<Slot />` to render the active screen directly,
+ * avoiding `expo-router/ui`'s `useVisibleTabsWithRedirect` which erroneously
+ * closes or redirects dynamic stack screens (like `/look/[id]`) in an instant.
+ * Fulfills Spec 00, Spec 04, Spec 06 & Mobile-First Cross-Platform Rule.
+ */
+
+import { Slot, usePathname, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import React, { useState } from 'react';
 import {
@@ -25,11 +26,14 @@ import { MaxContentWidth, MinTouchTargetSize, Spacing } from '@/constants/theme'
 import { useTheme } from '@/hooks/use-theme';
 import { triggerHapticFeedback } from '@/utils/a11y-feedback';
 
-interface AurasTabButtonProps extends TabTriggerSlotProps {
+interface AurasTabButtonProps {
   label: string;
   accessibilityLabel: string;
   iconIos: string;
   iconAndroid: string;
+  isFocused: boolean;
+  onPress: () => void;
+  style?: any;
 }
 
 function AurasTabButton({
@@ -39,28 +43,22 @@ function AurasTabButton({
   iconAndroid,
   isFocused,
   onPress,
-  onFocus,
-  onBlur,
   style,
-  ref: _ref,
-  ...props
 }: AurasTabButtonProps) {
   const theme = useTheme();
   const [isKeyboardFocused, setIsKeyboardFocused] = useState(false);
 
-  const handlePress = (event: GestureResponderEvent) => {
+  const handlePress = (_event: GestureResponderEvent) => {
     void triggerHapticFeedback('light');
-    onPress?.(event);
+    onPress();
   };
 
-  const handleFocus = (event: NativeSyntheticEvent<TargetedEvent>) => {
+  const handleFocus = (_event: NativeSyntheticEvent<TargetedEvent>) => {
     setIsKeyboardFocused(true);
-    onFocus?.(event);
   };
 
-  const handleBlur = (event: NativeSyntheticEvent<TargetedEvent>) => {
+  const handleBlur = (_event: NativeSyntheticEvent<TargetedEvent>) => {
     setIsKeyboardFocused(false);
-    onBlur?.(event);
   };
 
   const webAriaProps =
@@ -79,9 +77,8 @@ function AurasTabButton({
 
   return (
     <Pressable
-      {...props}
       {...webAriaProps}
-      accessible
+      accessible={true}
       accessibilityRole="tab"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ selected: Boolean(isFocused) }}
@@ -95,7 +92,8 @@ function AurasTabButton({
           flattenedIncomingStyle,
           pressed && styles.pressed,
         ])
-      }>
+      }
+    >
       <ThemedView
         type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
         style={StyleSheet.flatten([
@@ -106,7 +104,8 @@ function AurasTabButton({
             borderColor: theme.focusRing,
             borderWidth: 2,
           },
-        ])}>
+        ])}
+      >
         <View importantForAccessibility="no-hide-descendants" aria-hidden={true}>
           <SymbolView
             name={{
@@ -120,7 +119,8 @@ function AurasTabButton({
         </View>
         <ThemedText
           type={isFocused ? 'smallBold' : 'small'}
-          style={{ color: activeTextColor }}>
+          style={{ color: activeTextColor }}
+        >
           {label}
         </ThemedText>
       </ThemedView>
@@ -128,13 +128,18 @@ function AurasTabButton({
   );
 }
 
-function CustomBottomTabList({ children, style, ...props }: TabListProps) {
+function CustomBottomTabList({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: any;
+}) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
   return (
     <View
-      {...props}
       accessibilityRole="tablist"
       accessibilityLabel="Navegación principal de AurasMatch"
       style={StyleSheet.flatten([
@@ -145,65 +150,68 @@ function CustomBottomTabList({ children, style, ...props }: TabListProps) {
           borderTopColor: theme.border,
           paddingBottom: Math.max(insets.bottom, Spacing.two),
         },
-      ])}>
+      ])}
+    >
       <View style={styles.bottomBarInner}>{children}</View>
     </View>
   );
 }
 
-/**
- * Predictable 3-Tab Bottom Navigation Bar (Feed, Subir, Usuario).
- * Uses `StyleSheet.flatten` on all `<Slot>` children (`TabList` and `TabTrigger`)
- * so `expo-router/ui` never logs the `<Slot>` style array warning.
- */
 export default function AppTabs() {
   const theme = useTheme();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  // Active tab determination based on pathname
+  const isFeedFocused =
+    pathname === '/' || pathname === '' || pathname.startsWith('/look');
+  const isUploadFocused = pathname.startsWith('/upload');
+  const isProfileFocused = pathname.startsWith('/profile');
 
   return (
-    <Tabs>
-      <View
-        style={StyleSheet.flatten([
-          styles.slotWrapper,
-          { backgroundColor: theme.background },
-        ])}>
-        <TabSlot style={{ flex: 1 }} />
+    <View style={[styles.rootContainer, { backgroundColor: theme.background }]}>
+      {/* Route slot renders the active screen (feed, upload, profile, or look/[id]) */}
+      <View style={styles.slotWrapper}>
+        <Slot />
       </View>
 
-      <TabList asChild>
-        <CustomBottomTabList>
-          <TabTrigger name="index" href="/" asChild>
-            <AurasTabButton
-              label="Feed"
-              accessibilityLabel="Pestaña 1 de 3: Feed comunitario de maquillaje"
-              iconIos="sparkles"
-              iconAndroid="auto_awesome"
-            />
-          </TabTrigger>
+      {/* Persistent Bottom Tab Bar */}
+      <CustomBottomTabList>
+        <AurasTabButton
+          label="Feed"
+          accessibilityLabel="Pestaña 1 de 3: Feed comunitario de maquillaje"
+          iconIos="sparkles"
+          iconAndroid="auto_awesome"
+          isFocused={isFeedFocused}
+          onPress={() => router.push('/')}
+        />
 
-          <TabTrigger name="upload" href="/upload" asChild>
-            <AurasTabButton
-              label="Subir"
-              accessibilityLabel="Pestaña 2 de 3: Subir y analizar foto de maquillaje"
-              iconIos="camera.fill"
-              iconAndroid="photo_camera"
-            />
-          </TabTrigger>
+        <AurasTabButton
+          label="Subir"
+          accessibilityLabel="Pestaña 2 de 3: Subir y analizar foto de maquillaje"
+          iconIos="camera.fill"
+          iconAndroid="photo_camera"
+          isFocused={isUploadFocused}
+          onPress={() => router.push('/upload')}
+        />
 
-          <TabTrigger name="profile" href="/profile" asChild>
-            <AurasTabButton
-              label="Usuario"
-              accessibilityLabel="Pestaña 3 de 3: Perfil de usuario y opciones de accesibilidad"
-              iconIos="person.crop.circle.fill"
-              iconAndroid="person"
-            />
-          </TabTrigger>
-        </CustomBottomTabList>
-      </TabList>
-    </Tabs>
+        <AurasTabButton
+          label="Usuario"
+          accessibilityLabel="Pestaña 3 de 3: Perfil de usuario y opciones de accesibilidad"
+          iconIos="person.crop.circle.fill"
+          iconAndroid="person"
+          isFocused={isProfileFocused}
+          onPress={() => router.push('/profile')}
+        />
+      </CustomBottomTabList>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+  },
   slotWrapper: {
     flex: 1,
   },

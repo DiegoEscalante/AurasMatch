@@ -67,7 +67,7 @@ Pasado el **Login / Registro**, la aplicación cuenta con una barra de navegaci�
 - [x] **Fase 03 (`03-supabase-and-auth.md`):** Ajuste aditivo Forma 2 en Supabase (verificado en vivo), Cliente Supabase/R2, `AuthProvider` y `AuthCard` (`docs/phases/README-fase-03.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md` — Commit `9f708ab`).
 - [x] **Fase 04 (`04-navigation-and-profile.md`):** Navegación de 3 Pestañas (`Feed`, `Subir`, `Usuario`) + Compromiso Gradual (*Gradual Engagement*) + Pantalla de Usuario con Desplegable de Accesibilidad y Apelación Anti-IA (`docs/phases/README-fase-04.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).
 - [x] **Fase 05 (`05-feed-and-triple-filter.md`):** Feed 100% Humano + Barra Persistente con Botón Desplegable de Filtro Triple y Tolerancia a Errores (`docs/phases/README-fase-05.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).
-- [ ] **Fase 06 (`06-look-detail-and-product-popup.md`):** Detalle del Look estilo Pinterest + Popup de Producto con Focus Trap + Mini-feed Similar.
+- [x] **Fase 06 (`06-look-detail-and-product-popup.md`):** Detalle del Look estilo Pinterest + Popup de Producto con Focus Trap + Mini-feed Similar (`docs/phases/README-fase-06.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).
 - [ ] **Fase 07 (`07-upload-and-ai-analysis.md`):** Pantalla de Subida y Análisis IA con Cloud Run + Alt-Text IA + Apelación.
 - [ ] **Fase 08 (`08-low-priority-extras.md`):** Extras de Baja Prioridad (Comentarios desplegables y Controles Asistidos de Comandos de Voz).
 - [ ] **Fase 09 (`09-final-delivery-docs.md`):** `README.md` Raíz, Matriz Trazable Corte 2 vs. Corte 3 y Documento Técnico Final.

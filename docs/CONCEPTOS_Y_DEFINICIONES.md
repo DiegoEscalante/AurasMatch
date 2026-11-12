@@ -182,3 +182,31 @@ $$\text{Ratio de Contraste} = \frac{L_{\text{más claro}} + 0.05}{L_{\text{más 
 * **Propósito:** Al aplicar un filtro, borrar una búsqueda o seleccionar una subcultura, una persona vidente ve inmediatamente la actualización visual del número de publicaciones. Para un usuario ciego, el criterio **WCAG 4.1.3** requiere que el cambio de estado se anuncie sin robar el foco activo del usuario.
 * **Implementación:** Al definir la barra de conteo con `accessibilityLiveRegion="polite"` y `aria-live="polite"`, el sintetizador de voz del dispositivo anuncia discretamente: *"Mostrando 3 de 3 looks verificados (1 filtro aplicado)"* justo después de que el usuario termina su interacción, respetando el flujo de lectura sin interrupciones abruptas.
 
+---
+
+## Nivel 9: Detalle de Publicación Estilo Pinterest, Popup de Cosméticos y Step-Zoom (Fase 06)
+
+### 28. Step-Zoom Accesible por Botones vs. Gestos Complejos de Pellizco (Promesa M.3 y `2ndPhaseProposal.pdf` Sección V.A.4)
+* **El problema de accesibilidad:** En aplicaciones móviles tradicionales (como Instagram o galerías), inspeccionar detalles de maquillaje (como la precisión de un delineado alado o el degradado de labios) exige el gesto bimanual de pellizco para zoom (*pinch-to-zoom*). Este gesto es sumamente excluyente para personas con temblores motores, artritis, amputaciones o una sola mano disponible.
+* **Solución en [`StepZoomImage`](../frontend/src/components/ui/step-zoom-image.tsx):**
+  * Proporciona una barra de zoom accesible con botones táctiles grandes ($\ge 48 \times 48\text{ dp}$) de `+ Zoom` y `- Zoom`.
+  * Incrementa la escala visual en pasos discretos ($1\times \to 1.5\times \to 2\times \to 2.5\times$).
+  * Puede operarse con un solo toque, con la barra espaciadora o con la tecla `Enter` de un switch o teclado adaptado, satisfaciendo **WCAG 2.5.1 (Pointer Gestures)**.
+
+### 29. Modal Accesible de Producto con Gestión de Foco y Regla Móvil-Primero (Promesa C.3 y `2ndPhaseProposal.pdf` Sección V.C.3)
+* **¿Qué es la gestión de foco en diálogos modales (WCAG 2.4.3 *Focus Order*)?**
+  * Al abrir una ventana emergente sobre la pantalla actual, el foco del lector de pantalla o teclado no debe perderse ni permanecer en los elementos que quedaron detrás en el fondo.
+  * Si el foco no está atrapado, un usuario invidente podría terminar activando accidentalmente botones del feed que no ve.
+* **Implementación en [`ProductDetailModal`](../frontend/src/components/look/product-detail-modal.tsx):**
+  * **En Móvil (Android/iOS):** Utiliza la propiedad nativa `accessibilityViewIsModal={true}` en el componente `Modal`, garantizando que TalkBack y VoiceOver reconozcan el diálogo como una ventana aislada y no lean el contenido subyacente.
+  * **En Web:** Se inyectan condicionalmente atributos ARIA `{ role: 'dialog', 'aria-modal': true }` mediante guardas `Platform.OS === 'web'`. Permite cerrar el diálogo mediante la tecla física `Escape` y devuelve el flujo de navegación sin desorientación.
+
+### 30. Mapeo Perceptual de Coordenadas CIELAB ($L^*, a^*, b^*$) en Cosméticos Reales
+* **¿Por qué CIELAB y no RGB?**
+  * El espacio RGB depende del dispositivo y de la calibración de la pantalla; una distancia euclidiana en RGB no corresponde a cómo el ojo humano percibe las diferencias entre tonos de piel y maquillaje.
+  * En el espacio **CIE $L^*a^*b^*$**, $L^*$ representa la luminosidad perceptual ($0 = \text{negro}$, $100 = \text{blanco}$), $a^*$ representa el eje Verde ($-$) a Rojo ($+$), y $b^*$ representa el eje Azul ($-$) a Amarillo ($+$).
+* **Uso en el Detalle del Look:**
+  * Al extraer un tono facial con MediaPipe, AurasMatch busca en la tabla `public.products` (con más de 3,000 tonos indexados) el cosmético cuya distancia euclidiana $\Delta E = \sqrt{(\Delta L^*)^2 + (\Delta a^*)^2 + (\Delta b^*)^2}$ sea mínima.
+  * El popup del producto exhibe estas coordenadas para dar total transparencia al usuario sobre la exactitud cromática del maquillaje recomendado.
+
+

@@ -568,3 +568,176 @@ export async function syncAccessibilityPrefsToProfile(
   }
 }
 
+/**
+ * Fetches a single look by ID, hydrating image URLs, like status, and saved status.
+ */
+export async function fetchLookById(
+  lookId: string,
+  currentUserId?: string | null
+): Promise<LookRow | null> {
+  const overrides = await getLocalLookOverrides();
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('looks')
+        .select('*')
+        .eq('id', lookId)
+        .maybeSingle();
+
+      if (!error && data) {
+        let isSavedByMe = false;
+        if (currentUserId && !currentUserId.startsWith('demo-')) {
+          const { data: savedRow } = await supabase
+            .from('saved_looks')
+            .select('look_id')
+            .eq('user_id', currentUserId)
+            .eq('look_id', lookId)
+            .maybeSingle();
+          isSavedByMe = Boolean(savedRow);
+        } else {
+          isSavedByMe = overrides.savedLookIds.includes(lookId);
+        }
+
+        const likedBy = Array.isArray(data.liked_by) ? data.liked_by : [];
+        const isLikedByMe = currentUserId
+          ? likedBy.includes(currentUserId)
+          : overrides.likedLookIds.includes(lookId);
+
+        return {
+          ...(data as LookRow),
+          resolved_image_url: resolveLookImageUrl(data.image_path, data.id),
+          is_saved_by_me: isSavedByMe,
+          is_liked_by_me: isLikedByMe,
+          liked_by: likedBy,
+          description: overrides.descriptionsByLookId[lookId] || data.description || '',
+          appeal_status: overrides.appealsByLookId[lookId] || data.appeal_status || 'none',
+          comments: overrides.commentsByLookId[lookId] || data.comments || [],
+        };
+      }
+    } catch {
+      // Fallback below
+    }
+  }
+
+  // Fallback mirror search
+  const found = REAL_SUPABASE_MIRROR_LOOKS.find((item) => item.id === lookId);
+  if (!found) return null;
+
+  const isLikedByMe = currentUserId
+    ? found.liked_by.includes(currentUserId)
+    : overrides.likedLookIds.includes(lookId);
+
+  const isSavedByMe = overrides.savedLookIds.includes(lookId);
+
+  return {
+    ...found,
+    resolved_image_url: resolveLookImageUrl(found.image_path, found.id),
+    is_liked_by_me: isLikedByMe,
+    is_saved_by_me: isSavedByMe,
+    description: overrides.descriptionsByLookId[lookId] || found.description,
+    appeal_status: overrides.appealsByLookId[lookId] || found.appeal_status || 'none',
+    comments: overrides.commentsByLookId[lookId] || found.comments || [],
+  };
+}
+
+/**
+ * Fetches multiple cosmetic products by IDs from `public.products`.
+ */
+export async function fetchProductsByIds(productIds: number[]): Promise<ProductRow[]> {
+  if (productIds.length === 0) return [];
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .in('id', productIds);
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.map((prod) => ({
+          ...(prod as ProductRow),
+          resolved_image_url: resolveProductImageUrl(prod.image_url),
+        }));
+      }
+    } catch {
+      // Fallback below
+    }
+  }
+
+  // Fallback mirror search
+  const results: ProductRow[] = [];
+  for (const id of productIds) {
+    const mirror = REAL_SUPABASE_MIRROR_PRODUCTS[id];
+    if (mirror) {
+      results.push({
+        ...mirror,
+        resolved_image_url: resolveProductImageUrl(mirror.image_url),
+      });
+    }
+  }
+  return results;
+}
+
+/**
+ * Fetches similar verified looks sharing subculture or similar facial color families.
+ */
+export async function fetchSimilarLooks(
+  currentLook: LookRow,
+  limit: number = 4
+): Promise<LookRow[]> {
+  const overrides = await getLocalLookOverrides();
+  const subcultures = currentLook.subculture || [];
+
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('looks')
+        .select('*')
+        .eq('is_human_verified', true)
+        .neq('id', currentLook.id)
+        .limit(limit * 2);
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        // Sort by matching subculture first
+        const sorted = data.sort((a, b) => {
+          const aMatch = (a.subculture || []).some((s: string) => (subcultures as string[]).includes(s));
+          const bMatch = (b.subculture || []).some((s: string) => (subcultures as string[]).includes(s));
+          if (aMatch && !bMatch) return -1;
+          if (!aMatch && bMatch) return 1;
+          return 0;
+        });
+
+        return sorted.slice(0, limit).map((item) => ({
+          ...(item as LookRow),
+          resolved_image_url: resolveLookImageUrl(item.image_path, item.id),
+          is_liked_by_me: overrides.likedLookIds.includes(item.id),
+          is_saved_by_me: overrides.savedLookIds.includes(item.id),
+        }));
+      }
+    } catch {
+      // Fallback below
+    }
+  }
+
+  // Fallback mirror search
+  const candidates = REAL_SUPABASE_MIRROR_LOOKS.filter(
+    (item) => item.is_human_verified && item.id !== currentLook.id
+  );
+
+  const sorted = candidates.sort((a, b) => {
+    const aMatch = (a.subculture || []).some((s) => (subcultures as string[]).includes(s));
+    const bMatch = (b.subculture || []).some((s) => (subcultures as string[]).includes(s));
+    if (aMatch && !bMatch) return -1;
+    if (!aMatch && bMatch) return 1;
+    return 0;
+  });
+
+  return sorted.slice(0, limit).map((item) => ({
+    ...item,
+    resolved_image_url: resolveLookImageUrl(item.image_path, item.id),
+    is_liked_by_me: overrides.likedLookIds.includes(item.id),
+    is_saved_by_me: overrides.savedLookIds.includes(item.id),
+  }));
+}
+

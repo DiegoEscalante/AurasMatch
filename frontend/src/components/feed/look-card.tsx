@@ -68,10 +68,11 @@ export function LookCard({
     { hex_value: string }
   ][];
 
-  // Primary press / details interaction (Full screen detail will be activated in Phase 06)
+  // Primary press / details interaction: Navigates to full Pinterest-style detail screen (Phase 06)
   const handleOpenDetails = () => {
     triggerHapticFeedback('light');
-    announceStatus(`Publicación de @${look.author_username || 'auras'}. ${subcultureText}.`);
+    announceStatus(`Abriendo detalles de la publicación de @${look.author_username || 'auras'}.`);
+    router.push(`/look/${look.id}` as any);
   };
 
   // Toggle Like with gradual engagement check
