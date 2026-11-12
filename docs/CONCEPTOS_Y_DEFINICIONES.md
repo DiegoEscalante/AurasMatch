@@ -144,3 +144,41 @@ $$\text{Ratio de Contraste} = \frac{L_{\text{más claro}} + 0.05}{L_{\text{más 
 ### 22. Patrón *Headless Custom Hook* (`useUserProfile`)
 * **¿Qué es?** Es un patrón de arquitectura limpia en React donde toda la lógica de estado, llamadas asíncronas a Supabase, filtrado de colecciones (`myUploadedLooks`, `myLikedLooks`, `mySavedLooks`) y mutaciones (`requestHumanAppeal`) se encapsulan dentro de un hook sin interfaz visual ([`useUserProfile`](../frontend/src/hooks/use-user-profile.ts)).
 * **Por qué es clave para Google Stitch y la Defensa Técnica:** El archivo de pantalla ([`profile.tsx`](../frontend/src/app/profile.tsx)) se limita a describir la estructura visual consumiendo los datos ya procesados del hook. Así, aplicar estilos nuevos con **Google Stitch** jamás pone en riesgo las consultas a la base de datos.
+
+---
+
+## Nivel 8: Búsqueda Multidimensional, Tolerancia a Errores y Cuadrícula Responsiva (Fase 05)
+
+### 23. Distancia de Levenshtein y Tolerancia a Errores Ortográficos (WCAG 2.1 SC 3.3.3 y `2ndPhaseProposal.pdf` Sección V.B)
+* **¿Qué es la Distancia de Levenshtein?** Es una métrica de distancia de edición que calcula el número mínimo de operaciones elementales (inserción, eliminación o sustitución de un carácter) necesarias para transformar una cadena de texto en otra.
+* **Aplicación en Diversidad Cognitiva ([`fuzzy-search.ts`](../frontend/src/utils/fuzzy-search.ts)):**
+  * Para usuarios con dislexia, temblores motores o teclados reducidos en móvil, escribir términos no tradicionales como `"jirai"`, `"egirl"`, `"cleangirl"` o `"gótico"` suele generar errores comunes (ej. `"jiray"`, `"egilr"`, `"gotico"`, `"labial"`).
+  * AurasMatch indexa un diccionario canónico de subculturas, regiones faciales y familias de color. Al escribir en la barra de búsqueda persistente, calcula la distancia de Levenshtein y ofrece chips predictivos corregidos con un toque. Esto satisface directamente el criterio **WCAG 2.1 SC 3.3.3 (Sugerencia de Corrección de Errores)**.
+
+### 24. Patrón de Combinación Contextual Inteligente en Filtros Multidimensionales
+* **El desafío:** Un filtro tradicional aplica condiciones de intersección estricta (`AND`) directas entre columnas. Sin embargo, en un sistema de maquillaje donde los looks tienen 4 regiones segmentadas (`lips`, `brows`, `eyelids`, `lash_line`), buscar un "Color" de forma aislada tiene un significado diferente a buscar un "Color + Área Facial".
+* **Lógica de Combinación en [`use-feed.ts`](../frontend/src/hooks/use-feed.ts):**
+  1. **Subcultura:** Filtra looks que pertenezcan a esa estética (`Jirai Kei`, `Clean Girl`, `Goth`, `E-Girl`, `Y2K`).
+  2. **Área Facial + Color (Juntos):** Evalúa que el tono perceptual extraído en esa área específica (`extracted_regions[área].hex_value`) coincida con la familia cromática seleccionada (vía distancia perceptual $\Delta E$ en CIELAB $\le 28$).
+  3. **Solo Color (Sin Área):** Busca que el tono esté presente en *cualquiera* de las 4 áreas faciales del look.
+  4. **Solo Área Facial (Sin Color):** Filtra looks que tengan productos y extracción en esa región facial.
+  5. **Texto Libre:** Aplica coincidencia difusa (*fuzzy*) sobre descripciones, etiquetas, autores y nombres de color.
+
+### 25. Cuadrícula Responsiva Estilo Pinterest con Conmutación Dinámica de Columnas (WCAG 1.4.4 *Resize Text*)
+* **¿Qué exige WCAG 1.4.4?** La aplicación debe permitir escalar el texto hasta un 200% sin que el contenido se trunque, se desborde o se solapen los elementos interactivos.
+* **Mecanismo de Conmutación Adaptativa ([`index.tsx`](../frontend/src/app/index.tsx)):**
+  * Con escalado tipográfico normal (`100%` a `125%`), la pantalla presenta una **cuadrícula de 2 columnas estilo Pinterest**, optimizando el espacio visual y la densidad de exploración.
+  * Si el usuario incrementa el escalado a **$\ge 150\%$** (o la pantalla es estrecha $< 520\text{ px}$), la vista cambia automáticamente a **1 sola columna ancha**. Esto asegura que las etiquetas de verificación Anti-IA, los botones de acción (`♥`, `★`, `🔊`) y los textos descriptivos mantengan tamaños táctiles $\ge 48\times 48\text{ dp}$ sin ningún truncamiento horizontal.
+
+### 26. Acciones de Accesibilidad Nativas (`accessibilityActions` y `onAccessibilityAction`)
+* **¿Por qué son críticas para lectores de pantalla (TalkBack, VoiceOver, NVDA)?**
+  * En interfaces complejas como una tarjeta estilo Pinterest con múltiples botones secundarios (Ver detalles, Like, Guardar, Escuchar voz), un usuario ciego que navega deslizando el dedo tendría que escuchar y presionar cada botón de manera secuencial para cada publicación del feed, generando una fatiga cognitiva extrema.
+* **Cómo lo implementa [`LookCard`](../frontend/src/components/feed/look-card.tsx):**
+  * La tarjeta completa se agrupa como un único nodo accesible (`accessible={true}`, `accessibilityRole="button"`).
+  * Expone la lista semántica `accessibilityActions: [{ name: 'activate' }, { name: 'like' }, { name: 'save' }, { name: 'speak' }]`.
+  * En TalkBack / VoiceOver, el lector anuncia: *"Acciones disponibles: deslice hacia arriba o abajo para seleccionarlas"*. El usuario puede dar Me Gusta o Guardar en un solo gesto sin necesidad de explorar los controles internos.
+
+### 27. Anuncios de Resultados en Regiones Vivas Políticas (`accessibilityLiveRegion="polite"` / WCAG 4.1.3 *Status Messages*)
+* **Propósito:** Al aplicar un filtro, borrar una búsqueda o seleccionar una subcultura, una persona vidente ve inmediatamente la actualización visual del número de publicaciones. Para un usuario ciego, el criterio **WCAG 4.1.3** requiere que el cambio de estado se anuncie sin robar el foco activo del usuario.
+* **Implementación:** Al definir la barra de conteo con `accessibilityLiveRegion="polite"` y `aria-live="polite"`, el sintetizador de voz del dispositivo anuncia discretamente: *"Mostrando 3 de 3 looks verificados (1 filtro aplicado)"* justo después de que el usuario termina su interacción, respetando el flujo de lectura sin interrupciones abruptas.
+

@@ -19,6 +19,11 @@
    - En paralelo se debe mantener actualizado `docs/CONCEPTOS_Y_DEFINICIONES.md` con todos los conceptos y definiciones importantes del proyecto (de lo general a lo específico).
    - Ambos documentos se redactan asumiendo que el lector comprende el temario de `docs/projectProposalDocs/agente-desarrollo-movil.md`, pero profundizando explícitamente en aquellos puntos que aunque en teoría se conozcan son muy importantes para entender y defender el proyecto.
 5. **Commit y Push al Cerrar cada Fase:** Solo cuando el usuario exprese conformidad y dé por completada una fase (Pieza de Lego), se actualiza el Checklist de Progreso en la Sección 4 de este archivo y se realiza `git add`, `git commit` descriptivo y `git push` al repositorio.
+6. **Regla Multiplataforma Móvil-Primero (Mobile-First Cross-Platform Rule):**
+   - Cualquier implementación, componente, estilo o propiedad **debe funcionar impecablemente tanto en Web como en Móvil, priorizando estrictamente su funcionamiento nativo en Móvil (Android e iOS)**.
+   - **Prohibición de Atributos Web Incompatibles:** Queda terminantemente prohibido inyectar roles o propiedades exclusivas de HTML/WAI-ARIA que no existan en el diccionario nativo de React Native (`AccessibilityRole`). Ejemplo crítico: `accessibilityRole="region"` NO existe en el enum nativo de `RCTViewManager` / `ReactViewManager` y rompe la aplicación en móvil al instante con: `Error while updating 'accessibilityrole' of a view managed by: RCTView`.
+   - **Guardas de Plataforma Obligatorias:** Cuando se requiera un atributo semántico exclusivo de Web (como `role="region"`), **debe protegerse obligatoriamente con guardas de plataforma:** `{...(Platform.OS === 'web' ? { role: 'region' as const } : {})}`. En móvil nativo deben usarse exclusivamente las APIs oficiales de React Native Core (`accessible={true}`, `accessibilityLabel`, `accessibilityHint`, `accessibilityState`).
+   - Toda prueba y verificación debe asegurar que los botones, desplegables, overlays y modales no fallen al ejecutarse en Expo Go / emuladores móviles de Android y dispositivos iOS.
 
 ---
 
@@ -61,7 +66,7 @@ Pasado el **Login / Registro**, la aplicación cuenta con una barra de navegaci�
 - [x] **Fase 02 (`02-ui-primitives.md`):** Primitivas Accesibles Móvil + Web (`AccessiblePressable`, `AccessibleCollapsible`, `VisualAlertBanner`, `StepZoomImage`, `ColorSwatchBadge` + Laboratorio de pruebas en `explore.tsx` + `docs/phases/README-fase-02.md` — Commit `bb20630`).
 - [x] **Fase 03 (`03-supabase-and-auth.md`):** Ajuste aditivo Forma 2 en Supabase (verificado en vivo), Cliente Supabase/R2, `AuthProvider` y `AuthCard` (`docs/phases/README-fase-03.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md` — Commit `9f708ab`).
 - [x] **Fase 04 (`04-navigation-and-profile.md`):** Navegación de 3 Pestañas (`Feed`, `Subir`, `Usuario`) + Compromiso Gradual (*Gradual Engagement*) + Pantalla de Usuario con Desplegable de Accesibilidad y Apelación Anti-IA (`docs/phases/README-fase-04.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).
-- [ ] **Fase 05 (`05-feed-and-triple-filter.md`):** Feed 100% Humano + Barra Persistente con Botón Desplegable de Filtro Triple y Tolerancia a Errores.
+- [x] **Fase 05 (`05-feed-and-triple-filter.md`):** Feed 100% Humano + Barra Persistente con Botón Desplegable de Filtro Triple y Tolerancia a Errores (`docs/phases/README-fase-05.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).
 - [ ] **Fase 06 (`06-look-detail-and-product-popup.md`):** Detalle del Look estilo Pinterest + Popup de Producto con Focus Trap + Mini-feed Similar.
 - [ ] **Fase 07 (`07-upload-and-ai-analysis.md`):** Pantalla de Subida y Análisis IA con Cloud Run + Alt-Text IA + Apelación.
 - [ ] **Fase 08 (`08-low-priority-extras.md`):** Extras de Baja Prioridad (Comentarios desplegables y Controles Asistidos de Comandos de Voz).

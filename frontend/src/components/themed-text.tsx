@@ -43,25 +43,37 @@ export function ThemedText({
   accessibilityRole,
   ...rest
 }: ThemedTextProps) {
-  const { palette, prefs, activeFontFamily } = useAccessibility();
+  const { palette, prefs, activeFontFamily, effectiveFontScale } = useAccessibility();
 
   const spec = BASE_TYPOGRAPHY[type];
-  const scale = prefs.font_scale;
-  const scaledFontSize = Math.round(spec.fontSize * scale);
+  const scale = effectiveFontScale ?? prefs.font_scale ?? 1.0;
   const dyslexiaLineBoost = prefs.dyslexia_font ? 0.12 : 0;
-  const scaledLineHeight = Math.ceil(
-    scaledFontSize * (spec.lineHeightRatio + dyslexiaLineBoost)
-  );
+
+  const flattened = style ? StyleSheet.flatten(style) : undefined;
+  const rawFontSize =
+    flattened && typeof flattened.fontSize === 'number'
+      ? flattened.fontSize
+      : spec.fontSize;
+  const scaledFontSize = Math.round(rawFontSize * scale);
+
+  const rawLineHeight =
+    flattened && typeof flattened.lineHeight === 'number'
+      ? flattened.lineHeight
+      : Math.ceil(rawFontSize * (spec.lineHeightRatio + dyslexiaLineBoost));
+  const scaledLineHeight = Math.ceil(rawLineHeight * scale);
 
   const resolvedColor =
-    themeColor !== undefined
-      ? palette[themeColor]
-      : type === 'linkPrimary'
-        ? palette.linkPrimary
-        : palette.text;
+    flattened?.color !== undefined
+      ? flattened.color
+      : themeColor !== undefined
+        ? palette[themeColor]
+        : type === 'linkPrimary'
+          ? palette.linkPrimary
+          : palette.text;
 
   const fontFamily =
-    type === 'code' && !prefs.dyslexia_font ? Fonts?.mono : activeFontFamily;
+    flattened?.fontFamily ??
+    (type === 'code' && !prefs.dyslexia_font ? Fonts?.mono : activeFontFamily);
 
   const isHeading = type === 'title' || type === 'subtitle';
   const resolvedRole = accessibilityRole ?? (isHeading ? 'header' : undefined);
@@ -74,16 +86,16 @@ export function ThemedText({
       accessibilityRole={resolvedRole}
       aria-level={ariaLevel}
       style={[
+        style,
         {
           color: resolvedColor,
           fontSize: scaledFontSize,
           lineHeight: scaledLineHeight,
-          fontWeight: spec.fontWeight,
+          fontWeight: flattened?.fontWeight ?? spec.fontWeight,
           fontFamily,
-          letterSpacing: prefs.dyslexia_font ? 0.6 : undefined,
+          letterSpacing: prefs.dyslexia_font ? 0.6 : flattened?.letterSpacing,
         },
         type === 'link' || type === 'linkPrimary' ? styles.underlineOnHighContrast : null,
-        style,
       ]}
       {...rest}
     />
