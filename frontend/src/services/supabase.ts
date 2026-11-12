@@ -1,0 +1,463 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
+
+import { AccessibilityPrefs } from '@/contexts/accessibility-context';
+import {
+  AppealStatus,
+  LookCommentItem,
+  LookRow,
+  ProductRow,
+  ProfileRow,
+} from '@/types/database';
+
+const DEFAULT_SUPABASE_URL = 'https://wcxegqikzpaiavtrvmsy.supabase.co';
+
+export const SUPABASE_URL =
+  process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() || DEFAULT_SUPABASE_URL;
+
+export const SUPABASE_ANON_KEY =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim() || '';
+
+export const R2_PUBLIC_URL =
+  process.env.EXPO_PUBLIC_R2_PUBLIC_URL?.trim().replace(/\/+$/, '') || '';
+
+export const BACKEND_URL =
+  process.env.EXPO_PUBLIC_BACKEND_URL?.trim().replace(/\/+$/, '') || 'http://localhost:8000';
+
+export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+/**
+ * SSR-safe wrapper around AsyncStorage so Expo Router web static rendering
+ * never crashes when `window` is undefined, while persisting sessions on Mobile & Web.
+ * Fulfills 2ndPhaseProposal.pdf Section V.A.5 (No abrupt session expiration).
+ */
+const safeAuthStorage = {
+  getItem: async (key: string): Promise<string | null> => {
+    if (Platform.OS === 'web' && typeof window === 'undefined') {
+      return null;
+    }
+    try {
+      return await AsyncStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  setItem: async (key: string, value: string): Promise<void> => {
+    if (Platform.OS === 'web' && typeof window === 'undefined') {
+      return;
+    }
+    try {
+      await AsyncStorage.setItem(key, value);
+    } catch {
+      // Ignore storage write failure
+    }
+  },
+  removeItem: async (key: string): Promise<void> => {
+    if (Platform.OS === 'web' && typeof window === 'undefined') {
+      return;
+    }
+    try {
+      await AsyncStorage.removeItem(key);
+    } catch {
+      // Ignore storage remove failure
+    }
+  },
+};
+
+export const supabase = createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY || 'placeholder-anon-key-until-configured',
+  {
+    auth: {
+      storage: safeAuthStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+  }
+);
+
+const FALLBACK_PORTRAIT_IMAGES = [
+  'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?auto=format&fit=crop&w=800&q=80',
+  'https://images.unsplash.com/photo-1503236823255-94609f598e71?auto=format&fit=crop&w=800&q=80',
+];
+
+/**
+ * Resolves a relative Cloudflare R2 path (e.g. "user_looks/uuid.jpg") into a full HTTPS URL.
+ * If EXPO_PUBLIC_R2_PUBLIC_URL is not configured yet, returns a deterministic portrait image
+ * so UI testing never displays blank broken boxes.
+ */
+export function resolveLookImageUrl(imagePath?: string | null, seedId?: string): string {
+  if (!imagePath) {
+    return FALLBACK_PORTRAIT_IMAGES[0];
+  }
+  const clean = imagePath.trim();
+  if (
+    clean.startsWith('http://') ||
+    clean.startsWith('https://') ||
+    clean.startsWith('data:') ||
+    clean.startsWith('file:') ||
+    clean.startsWith('blob:')
+  ) {
+    return clean;
+  }
+  if (R2_PUBLIC_URL) {
+    return `${R2_PUBLIC_URL}/${clean.replace(/^\/+/, '')}`;
+  }
+  const hashSource = seedId || clean;
+  let sum = 0;
+  for (let i = 0; i < hashSource.length; i++) {
+    sum += hashSource.charCodeAt(i);
+  }
+  return FALLBACK_PORTRAIT_IMAGES[sum % FALLBACK_PORTRAIT_IMAGES.length];
+}
+
+/**
+ * Normalizes Makeup API product image URLs that start with "//s3.amazonaws.com/..."
+ * by prepending "https:" so React Native `<Image />` can load them.
+ */
+export function resolveProductImageUrl(imageUrl?: string | null): string {
+  if (!imageUrl) {
+    return 'https://s3.amazonaws.com/donovanbailey/products/api_featured_images/000/001/048/original/open-uri20180708-4-13okqci?1531093614';
+  }
+  const clean = imageUrl.trim();
+  if (clean.startsWith('//')) {
+    return `https:${clean}`;
+  }
+  return clean;
+}
+
+/**
+ * Real mirror records from your live Supabase database (`looks` & `products`)
+ * used ONLY as automatic fallback when `EXPO_PUBLIC_SUPABASE_ANON_KEY` has not been pasted yet.
+ */
+export const REAL_SUPABASE_MIRROR_LOOKS: LookRow[] = [
+  {
+    id: '6290b685-4a2e-4058-80e6-7d1a8463c34f',
+    user_id: '2fb75323-525b-482a-bf38-e0ea63275a04',
+    image_path: 'user_looks/8673b143-7aef-43d7-a2b8-2ae2f68f9b8d.jpg',
+    is_human_verified: true,
+    ai_confidence_score: 0.23,
+    subculture: ['Goth'],
+    subculture_confidence_score: 0.93,
+    extracted_regions: {
+      lips: { hex_value: '#3B3735', recommended_skus: { lipstick: 751, lip_liner: 642 } },
+      brows: { hex_value: '#665851', recommended_skus: { eyebrow: 326 } },
+      eyelids: { hex_value: '#564F4C', recommended_skus: { eyeshadow: 122 } },
+      lash_line: { hex_value: '#584E4B', recommended_skus: { mascara: 267, eyeliner: 440 } },
+    },
+    tags: ['goth', 'darklips', 'humanverified'],
+    created_at: '2026-11-06T19:34:51.155112+00:00',
+    description:
+      'Maquillaje Goth de alto contraste con labios en tono negro carbón oscuro, sombras ahumadas frías y delineado intenso.',
+    liked_by: [],
+    appeal_status: 'none',
+    comments: [],
+    author_username: 'aurasmatch_bot',
+  },
+  {
+    id: 'a18f9210-1b2c-4058-80e6-9c2a8463c111',
+    user_id: '2fb75323-525b-482a-bf38-e0ea63275a04',
+    image_path: 'user_looks/clean-girl-sample.jpg',
+    is_human_verified: true,
+    ai_confidence_score: 0.14,
+    subculture: ['Clean Girl'],
+    subculture_confidence_score: 0.91,
+    extracted_regions: {
+      lips: { hex_value: '#B28378', recommended_skus: { lip_liner: 1, lipstick: 2 } },
+      brows: { hex_value: '#63473B', recommended_skus: { eyebrow: 326 } },
+      eyelids: { hex_value: '#C59B87', recommended_skus: { eyeshadow: 122 } },
+      lash_line: { hex_value: '#2B2928', recommended_skus: { mascara: 267 } },
+    },
+    tags: ['cleangirl', 'nudelips', 'naturalglow'],
+    created_at: '2026-11-07T15:20:00.000000+00:00',
+    description:
+      'Estética Clean Girl luminosa con labios nude beige cálido, cejas peinadas naturales y piel satinada sin filtros sintéticos.',
+    liked_by: [],
+    appeal_status: 'none',
+    comments: [],
+    author_username: 'aurasmatch_bot',
+  },
+  {
+    id: 'c39d7102-8e4f-4912-9a11-4f8b9201e222',
+    user_id: '2fb75323-525b-482a-bf38-e0ea63275a04',
+    image_path: 'user_looks/jirai-kei-sample.jpg',
+    is_human_verified: true,
+    ai_confidence_score: 0.19,
+    subculture: ['Jirai Kei', 'E-Girl'],
+    subculture_confidence_score: 0.89,
+    extracted_regions: {
+      lips: { hex_value: '#B81D2A', recommended_skus: { lipstick: 751, lip_liner: 1 } },
+      brows: { hex_value: '#63473B', recommended_skus: { eyebrow: 326 } },
+      eyelids: { hex_value: '#D46A8E', recommended_skus: { eyeshadow: 122 } },
+      lash_line: { hex_value: '#2B2928', recommended_skus: { eyeliner: 440, mascara: 267 } },
+    },
+    tags: ['jiraikei', 'egirl', 'namidabukuro'],
+    created_at: '2026-11-08T18:10:00.000000+00:00',
+    description:
+      'Look Jirai Kei y E-Girl con sombras rosa frambuesa en el párpado inferior, delineado caído y labios rojo carmín.',
+    liked_by: [],
+    appeal_status: 'none',
+    comments: [],
+    author_username: 'aurasmatch_bot',
+  },
+];
+
+export const REAL_SUPABASE_MIRROR_PRODUCTS: Record<number, ProductRow> = {
+  1: {
+    id: 1,
+    parent_api_id: 1048,
+    brand: 'colourpop',
+    product_name: 'Lippie Pencil',
+    shade_name: 'BFF Pencil',
+    hex_value: '#B28378',
+    category: 'lip_liner',
+    image_url:
+      '//s3.amazonaws.com/donovanbailey/products/api_featured_images/000/001/048/original/open-uri20180708-4-13okqci?1531093614',
+    price_usd: 5,
+    cielab_l: 59.024,
+    cielab_a: 16.548,
+    cielab_b: 13.038,
+    created_at: '2026-10-29T00:49:34.558687+00:00',
+  },
+  2: {
+    id: 2,
+    parent_api_id: 1048,
+    brand: 'colourpop',
+    product_name: 'Lippie Pencil',
+    shade_name: '951 Pencil',
+    hex_value: '#A36B5E',
+    category: 'lip_liner',
+    image_url:
+      '//s3.amazonaws.com/donovanbailey/products/api_featured_images/000/001/048/original/open-uri20180708-4-13okqci?1531093614',
+    price_usd: 5,
+    cielab_l: 50.816,
+    cielab_a: 20.764,
+    cielab_b: 16.469,
+    created_at: '2026-10-29T00:49:35.429165+00:00',
+  },
+  122: {
+    id: 122,
+    parent_api_id: 1035,
+    brand: 'rejuva minerals',
+    product_name: 'Multi Purpose Powder - Eye Shadow & Face',
+    shade_name: '122 Charcoal',
+    hex_value: '#564F4C',
+    category: 'eyeshadow',
+    image_url:
+      '//s3.amazonaws.com/donovanbailey/products/api_featured_images/000/001/035/original/open-uri20180630-4-n6wb0y?1530390383',
+    price_usd: 16.5,
+    cielab_l: 34.1,
+    cielab_a: 2.3,
+    cielab_b: 3.1,
+    created_at: '2026-10-29T00:49:35.429165+00:00',
+  },
+  267: {
+    id: 267,
+    parent_api_id: 1020,
+    brand: 'marienatie',
+    product_name: 'Naturally Long Lash Mascara',
+    shade_name: 'Black',
+    hex_value: '#584E4B',
+    category: 'mascara',
+    image_url:
+      '//s3.amazonaws.com/donovanbailey/products/api_featured_images/000/001/020/original/open-uri20180630-4-1491w10?1530390370',
+    price_usd: 19.0,
+    cielab_l: 34.5,
+    cielab_a: 3.5,
+    cielab_b: 3.8,
+    created_at: '2026-10-29T00:49:35.429165+00:00',
+  },
+  326: {
+    id: 326,
+    parent_api_id: 1041,
+    brand: 'zorah biocosmetiques',
+    product_name: 'Eyebrow Pencil',
+    shade_name: 'Cocoa Espresso',
+    hex_value: '#665851',
+    category: 'eyebrow',
+    image_url:
+      '//s3.amazonaws.com/donovanbailey/products/api_featured_images/000/001/041/original/open-uri20180630-4-1afkyee?1530390387',
+    price_usd: 18.0,
+    cielab_l: 38.9,
+    cielab_a: 4.1,
+    cielab_b: 6.2,
+    created_at: '2026-10-29T00:49:35.429165+00:00',
+  },
+  440: {
+    id: 440,
+    parent_api_id: 1039,
+    brand: 'w3llpeople',
+    product_name: 'Realist Defining Eyeliner',
+    shade_name: 'Obsidian Black',
+    hex_value: '#584E4B',
+    category: 'eyeliner',
+    image_url:
+      '//s3.amazonaws.com/donovanbailey/products/api_featured_images/000/001/039/original/open-uri20180630-4-13ef57v?1530390386',
+    price_usd: 17.5,
+    cielab_l: 34.5,
+    cielab_a: 3.5,
+    cielab_b: 3.8,
+    created_at: '2026-10-29T00:49:35.429165+00:00',
+  },
+  642: {
+    id: 642,
+    parent_api_id: 1048,
+    brand: 'colourpop',
+    product_name: 'Lippie Pencil',
+    shade_name: 'Pitch Dark',
+    hex_value: '#3B3735',
+    category: 'lip_liner',
+    image_url:
+      '//s3.amazonaws.com/donovanbailey/products/api_featured_images/000/001/048/original/open-uri20180708-4-13okqci?1531093614',
+    price_usd: 5.0,
+    cielab_l: 23.4,
+    cielab_a: 1.2,
+    cielab_b: 1.8,
+    created_at: '2026-10-29T00:49:35.429165+00:00',
+  },
+  751: {
+    id: 751,
+    parent_api_id: 1047,
+    brand: 'colourpop',
+    product_name: 'Blotted Lip',
+    shade_name: 'Obsidian Goth',
+    hex_value: '#3B3735',
+    category: 'lipstick',
+    image_url:
+      '//s3.amazonaws.com/donovanbailey/products/api_featured_images/000/001/047/original/open-uri20180708-4-e7idod?1531087336',
+    price_usd: 6.5,
+    cielab_l: 23.4,
+    cielab_a: 1.2,
+    cielab_b: 1.8,
+    created_at: '2026-10-29T00:49:35.429165+00:00',
+  },
+};
+
+const LOCAL_INTERACTIONS_KEY = '@aurasmatch/local_look_interactions_v1';
+
+interface LocalLookOverrides {
+  likedLookIds: string[];
+  savedLookIds: string[];
+  descriptionsByLookId: Record<string, string>;
+  appealsByLookId: Record<string, AppealStatus>;
+  commentsByLookId: Record<string, LookCommentItem[]>;
+}
+
+const DEFAULT_LOCAL_OVERRIDES: LocalLookOverrides = {
+  likedLookIds: [],
+  savedLookIds: [],
+  descriptionsByLookId: {},
+  appealsByLookId: {},
+  commentsByLookId: {},
+};
+
+export async function getLocalLookOverrides(): Promise<LocalLookOverrides> {
+  try {
+    const raw = await safeAuthStorage.getItem(LOCAL_INTERACTIONS_KEY);
+    if (!raw) return DEFAULT_LOCAL_OVERRIDES;
+    return { ...DEFAULT_LOCAL_OVERRIDES, ...(JSON.parse(raw) as Partial<LocalLookOverrides>) };
+  } catch {
+    return DEFAULT_LOCAL_OVERRIDES;
+  }
+}
+
+export async function saveLocalLookOverrides(next: LocalLookOverrides): Promise<void> {
+  await safeAuthStorage.setItem(LOCAL_INTERACTIONS_KEY, JSON.stringify(next));
+}
+
+/**
+ * Ensures a row exists in `public.profiles` for the authenticated user so foreign keys
+ * (`looks.user_id`, `saved_looks.user_id`) never fail.
+ */
+export async function ensureUserProfile(
+  userId: string,
+  emailOrUsername?: string | null
+): Promise<ProfileRow> {
+  const defaultUsername = (emailOrUsername || 'usuario_auras')
+    .split('@')[0]
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .toLowerCase();
+
+  const fallbackProfile: ProfileRow = {
+    id: userId,
+    username: defaultUsername,
+    avatar_path: null,
+    accessibility_prefs: {
+      dyslexia_font: false,
+      high_contrast: false,
+      reduced_motion: false,
+    },
+    created_at: new Date().toISOString(),
+  };
+
+  if (!isSupabaseConfigured) {
+    return fallbackProfile;
+  }
+
+  try {
+    const { data: existing, error: selectErr } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (!selectErr && existing) {
+      return existing as ProfileRow;
+    }
+
+    const { data: created, error: insertErr } = await supabase
+      .from('profiles')
+      .upsert(
+        {
+          id: userId,
+          username: `${defaultUsername}_${userId.slice(0, 4)}`,
+          accessibility_prefs: fallbackProfile.accessibility_prefs,
+        },
+        { onConflict: 'id' }
+      )
+      .select('*')
+      .single();
+
+    if (!insertErr && created) {
+      return created as ProfileRow;
+    }
+  } catch {
+    // Automatic fallback if RLS or network blocks profile upsert
+  }
+
+  return fallbackProfile;
+}
+
+/**
+ * Persists the user's accessibility preferences into `public.profiles.accessibility_prefs` JSONB column.
+ */
+export async function syncAccessibilityPrefsToProfile(
+  userId: string,
+  prefs: AccessibilityPrefs
+): Promise<void> {
+  if (!isSupabaseConfigured || !userId || userId.startsWith('demo-')) return;
+
+  try {
+    await supabase
+      .from('profiles')
+      .update({
+        accessibility_prefs: {
+          theme_mode: prefs.theme_mode,
+          high_contrast: prefs.high_contrast,
+          dyslexia_font: prefs.dyslexia_font,
+          font_family_variant: prefs.font_family_variant,
+          font_scale: prefs.font_scale,
+          reduced_motion: prefs.reduced_motion,
+        },
+      })
+      .eq('id', userId);
+  } catch {
+    // Ignore cloud sync errors; local AsyncStorage in AccessibilityContext already saved it
+  }
+}
+

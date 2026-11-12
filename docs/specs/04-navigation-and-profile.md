@@ -1,7 +1,8 @@
 # Spec 04 — Barra de Navegación de 3 Pestañas y Pantalla de Usuario con Menú Desplegable de Accesibilidad
 
 ## 1. Objetivo de la Pieza de Lego
-Implementar la estructura de navegación principal definida por el usuario (**3 pestañas inferiores predecibles**) y construir la **Pantalla de Usuario (Perfil)** aplicando el mismo patrón de **Menú Desplegable Accesible (`AccessibleCollapsible`)** para las opciones de accesibilidad.
+Implementar la estructura de navegación principal definida por el usuario (**3 pestañas inferiores predecibles visibles desde el inicio bajo el patrón *Gradual Engagement / Deferred Authentication*** de Nielsen Norman Group, Apple HIG y WCAG 2.2 SC 3.3.8) y construir la **Pantalla de Usuario (Perfil)** aplicando el mismo patrón de **Menú Desplegable Accesible (`AccessibleCollapsible`)** para las opciones de accesibilidad.
+- Cuando el usuario aún no ha iniciado sesión, puede explorar libremente la aplicación y ajustar las opciones de accesibilidad, y cuando intenta realizar acciones asociadas a una cuenta (guardar/dar like, subir un look o gestionar sus colecciones en `Usuario`), se le presenta el inicio de sesión o registro (`AuthCard` o prompt contextual).
 
 ## 2. Barra Inferior de 3 Pestañas (Lenguaje Claro y Diseño Predecible)
 Cumpliendo la promesa de **Diseño Predecible** (`2ndPhaseProposal.pdf` Sección V.B):

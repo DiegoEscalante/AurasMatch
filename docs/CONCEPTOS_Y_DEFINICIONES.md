@@ -107,3 +107,20 @@ $$\text{Ratio de Contraste} = \frac{L_{\text{más claro}} + 0.05}{L_{\text{más 
   * En **Android e iOS nativo**, el módulo `expo-speech` se comunica con el motor TTS del sistema operativo (`android.speech.tts.TextToSpeech` / `AVSpeechSynthesizer` en iOS) configurando el idioma `'es-ES'`.
   * En **Web**, React Native Web delega en la API estándar del navegador `window.speechSynthesis` instanciando un objeto `SpeechSynthesisUtterance`.
   * Antes de hablar, siempre se invoca `stopSpeaking()` para cancelar cualquier lectura previa en cola y evitar superposición de audio.
+
+
+---
+
+## Nivel 6: Persistencia en la Nube, Normalización de Medios y Sesiones Accesibles (Fase 03)
+
+### 17. Migraciones Aditivas No Destructivas (`ALTER TABLE ... ADD COLUMN ... DEFAULT`)
+* **¿Qué es?** En sistemas en producción donde un microservicio (como nuestro backend FastAPI en Google Cloud Run) ya está desplegado e insertando filas en una tabla SQL (`public.looks`), eliminar o renombrar columnas existentes rompería el servicio en vivo.
+* **Cómo se aplica en AurasMatch:** Al usar `ADD COLUMN IF NOT EXISTS ... DEFAULT ...` para agregar `description`, `liked_by`, `appeal_status` y `comments`, las consultas `INSERT` antiguas del backend siguen funcionando sin cambiar una sola línea de Python, porque el motor PostgreSQL rellena automáticamente el valor por defecto en cada nueva fila.
+
+### 18. Normalización de URLs Relativas al Protocolo (`//s3.amazonaws.com/...`) en React Native
+* **El problema:** En desarrollo web clásico, una URL que empieza con doble barra (`//s3.amazonaws.com/...`, usada en los 3,085 registros de Makeup API dentro de `public.products.image_url`) hereda automáticamente el protocolo `http:` o `https:` de la página actual. Sin embargo, en **React Native (iOS y Android)** la app no corre dentro de una página web `https://`, por lo que pasar una ruta `//...` al componente nativo `<Image />` falla silenciosamente.
+* **La solución (`resolveProductImageUrl` en [`supabase.ts`](../frontend/src/services/supabase.ts)):** Detecta cualquier URL que comience con `//` y la transforma explícitamente a `https://...` antes de entregarla a la interfaz.
+
+### 19. Sesiones Persistentes sin Expiración Abrupta (`2ndPhaseProposal.pdf` Sección V.A.5)
+* **¿Por qué es un requisito de accesibilidad?** Los estándares WCAG 2.2.1 (*Timing Adjustable*) y nuestra propuesta de Fase 2 establecen que las personas con limitaciones motoras o cognitivas tardan más tiempo en completar formularios o recorrer pantallas. Si el token de sesión caduca a mitad de uso sin renovarse automáticamente, el usuario pierde su progreso.
+* **Cómo se implementa:** El cliente de Supabase se inicializa con `persistSession: true` y `autoRefreshToken: true` respaldado por `AsyncStorage` (`safeAuthStorage`), renovando el JWT en segundo plano de forma transparente.

@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { AuthCard } from '@/components/auth/auth-card';
 import { AccessiblePressable } from '@/components/ui/accessible-pressable';
 import { ColorSwatchBadge } from '@/components/ui/color-swatch-badge';
 import { AccessibleCollapsible } from '@/components/ui/collapsible';
@@ -310,6 +311,14 @@ export default function ExploreTestSandboxScreen() {
               height={240}
               contentFit="contain"
             />
+          </AccessibleCollapsible>
+
+          {/* 5. Prueba de Autenticación y Conexión Supabase (Fase 03) */}
+          <AccessibleCollapsible
+            title="5. Autenticación y Perfil en Supabase (Fase 03)"
+            subtitle="Login, Registro y Sincronización de Accesibilidad"
+            defaultExpanded>
+            <AuthCard />
           </AccessibleCollapsible>
         </ThemedView>
       </ThemedView>

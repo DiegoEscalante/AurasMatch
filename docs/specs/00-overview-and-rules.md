@@ -58,8 +58,8 @@ Pasado el **Login / Registro**, la aplicación cuenta con una barra de navegaci�
 ## 4. Mapa de Fases y Checklist Vivo de Progreso (Memoria para Agentes)
 - [x] **Fase 00 (`00-overview-and-rules.md`):** Definición de arquitectura SDD, flujo estilo Pinterest y reglas de trabajo (Commit `159a267`).
 - [x] **Fase 01 (`01-accessibility-and-theme.md`):** Motor de Accesibilidad, Tokens de Tema, Nombres de Color y Tipografía Adaptativa (`docs/phases/README-fase-01.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md` — Commit `a2114a1`).
-- [x] **Fase 02 (`02-ui-primitives.md`):** Primitivas Accesibles Móvil + Web (`AccessiblePressable`, `AccessibleCollapsible`, `VisualAlertBanner`, `StepZoomImage`, `ColorSwatchBadge` + Laboratorio de pruebas en `explore.tsx` + `docs/phases/README-fase-02.md`).
-- [ ] **Fase 03 (`03-supabase-and-auth.md`):** Ajuste aditivo Forma 2 en Supabase, Cliente Supabase/R2 y Autenticación.
+- [x] **Fase 02 (`02-ui-primitives.md`):** Primitivas Accesibles Móvil + Web (`AccessiblePressable`, `AccessibleCollapsible`, `VisualAlertBanner`, `StepZoomImage`, `ColorSwatchBadge` + Laboratorio de pruebas en `explore.tsx` + `docs/phases/README-fase-02.md` — Commit `bb20630`).
+- [x] **Fase 03 (`03-supabase-and-auth.md`):** Ajuste aditivo Forma 2 en Supabase (verificado en vivo), Cliente Supabase/R2, `AuthProvider` y `AuthCard` (`docs/phases/README-fase-03.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).
 - [ ] **Fase 04 (`04-navigation-and-profile.md`):** Navegación de 3 Pestañas + Pantalla de Usuario con Desplegable de Accesibilidad.
 - [ ] **Fase 05 (`05-feed-and-triple-filter.md`):** Feed 100% Humano + Barra Persistente con Botón Desplegable de Filtro Triple y Tolerancia a Errores.
 - [ ] **Fase 06 (`06-look-detail-and-product-popup.md`):** Detalle del Look estilo Pinterest + Popup de Producto con Focus Trap + Mini-feed Similar.

@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
 import { AccessibilityProvider, useAccessibility } from '@/hooks/use-accessibility';
+import { AuthProvider } from '@/hooks/use-auth';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -22,7 +23,9 @@ function RootLayoutContent() {
 export default function TabLayout() {
   return (
     <AccessibilityProvider>
-      <RootLayoutContent />
+      <AuthProvider>
+        <RootLayoutContent />
+      </AuthProvider>
     </AccessibilityProvider>
   );
 }
