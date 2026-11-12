@@ -1,7 +1,7 @@
 import { View, type ViewProps } from 'react-native';
 
-import { ThemeColor } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { type ThemeColor } from '@/constants/theme';
+import { useAccessibility } from '@/hooks/use-accessibility';
 
 export type ThemedViewProps = ViewProps & {
   lightColor?: string;
@@ -9,8 +9,26 @@ export type ThemedViewProps = ViewProps & {
   type?: ThemeColor;
 };
 
-export function ThemedView({ style, lightColor, darkColor, type, ...otherProps }: ThemedViewProps) {
-  const theme = useTheme();
+export function ThemedView({
+  style,
+  lightColor,
+  darkColor,
+  type,
+  ...otherProps
+}: ThemedViewProps) {
+  const { palette, resolvedThemeKey } = useAccessibility();
+  const isSurfaceElement = type === 'backgroundElement' || type === 'backgroundSelected';
 
-  return <View style={[{ backgroundColor: theme[type ?? 'background'] }, style]} {...otherProps} />;
+  return (
+    <View
+      style={[
+        { backgroundColor: palette[type ?? 'background'] },
+        resolvedThemeKey === 'high_contrast' && isSurfaceElement
+          ? { borderWidth: 1.5, borderColor: palette.border }
+          : null,
+        style,
+      ]}
+      {...otherProps}
+    />
+  );
 }

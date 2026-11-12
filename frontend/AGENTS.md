@@ -1,5 +1,14 @@
 This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
 
+## Mandatory Project Rules & SDD Reference (Read First)
+
+Before proposing or writing any code, **ALWAYS read `../docs/specs/00-overview-and-rules.md`** and contrast every decision against the four official reference documents in `../projectProposalDocs/` (`Course Project Phase 3 - Entrega Final (Proyecto Final Desarrollo Móvil).md`, `Project Proposal.pdf`, `2ndPhaseProposal.pdf`, and `agente-desarrollo-movil.md`):
+1. **Never assume technical decisions:** Always ask the user first. Whenever asking a question, always provide a detailed explanation in the response text comparing each option, how it works, its pros/cons, and why one is recommended.
+2. **Guardrail against requirements:** If any user idea contradicts or omits requirements from the professor's rubric, the 16-week course standards (`agente-desarrollo-movil.md`), or the Phase 1/2 proposals, warn the user explicitly before acting (the user has the final word).
+3. **Mandatory Phase Documentation (`docs/phases/README-fase-XX.md` & `docs/CONCEPTOS_Y_DEFINICIONES.md`):** Before closing any phase, create its deep technical walkthrough in `../docs/phases/README-fase-XX.md` and update `../docs/CONCEPTOS_Y_DEFINICIONES.md` (going from general to specific concepts, aligned with the 16-week curriculum in `agente-desarrollo-movil.md`, explicitly explaining critical concepts for the 40% oral defense).
+4. **Commit & push per completed phase:** Only commit and push to the repository once the user explicitly approves and marks the current SDD phase as completed (and update the Phase Progress Checklist in `00-overview-and-rules.md`).
+5. **Compact & Stitch-Ready code:** Keep business logic and state inside custom hooks (`React Context` under the hood) and keep UI components clean, minimal, and free of unnecessary decorative bloat so Google Stitch styles can be applied later without breaking functionality.
+
 ## Expo has changed — do not trust your training data
 
 Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
