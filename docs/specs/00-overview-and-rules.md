@@ -1,19 +1,23 @@
 # Spec 00 — Visión General, Flujo de Aplicación y Reglas de Trabajo (SDD)
 
 ## 1. Regla Suprema de Alineación (Guardrail Principal)
-1. **Contraste Obligatorio con las 4 Fuentes Oficiales en `projectProposalDocs/`:**
-   - **Fuente A:** `projectProposalDocs/Course Project Phase 3 - Entrega Final (Proyecto Final Desarrollo Móvil).md` (Lineamientos y Rúbrica Oficial de la Fase 3 del profesor).
-   - **Fuente B:** `projectProposalDocs/Project Proposal.pdf` (Fase 1 — Visión del Producto, 3 Pilares de Innovación, MVP de 5 Subculturas, Regiones de Ojos/Labios y Mitigación de Riesgos).
-   - **Fuente C:** `projectProposalDocs/2ndPhaseProposal.pdf` (Fase 2 — Las 16 promesas de Accesibilidad en Motricidad, Cognitiva, Auditiva y Visual).
-   - **Fuente D:** `projectProposalDocs/agente-desarrollo-movil.md` (Temario oficial de las 16 semanas del curso Compass — Universidad de La Sabana).
-2. **Deber de Advertencia:** Cada vez que el usuario proponga un cambio, eliminación o diseño, el asistente **debe contrastarlo contra las Fuentes A, B, C y D** y contra los estándares de accesibilidad (WCAG 2.1/2.2 Nivel AA). Si algo contradice, omite o pone en riesgo algún punto de la rúbrica o de las propuestas previas, el asistente **debe advertirlo explícitamente** antes de implementar. El usuario siempre tiene la palabra final tras recibir la advertencia.
-3. **Cero Suposiciones Técnicas + Explicación Previa de Opciones:**
+1. **Contraste Obligatorio con las 3 Fuentes Regla del Proyecto en `docs/projectProposalDocs/`:**
+   - **Fuente A (Regla):** `docs/projectProposalDocs/Course Project Phase 3 - Entrega Final (Proyecto Final Desarrollo Móvil).md` (Lineamientos y Rúbrica Oficial de la Fase 3 del profesor).
+   - **Fuente B (Regla):** `docs/projectProposalDocs/Project Proposal.pdf` (Fase 1 — Visión del Producto, 3 Pilares de Innovación, MVP de 5 Subculturas, Regiones de Ojos/Labios y Mitigación de Riesgos).
+   - **Fuente C (Regla):** `docs/projectProposalDocs/2ndPhaseProposal.pdf` (Fase 2 — Las 16 promesas de Accesibilidad en Motricidad, Cognitiva, Auditiva y Visual).
+   - *(Referencia Pedagógica para Documentación — NO es regla de decisiones del proyecto):* `docs/projectProposalDocs/agente-desarrollo-movil.md` (Temario del curso usado únicamente para calibrar el nivel de las explicaciones en los `README` de cada fase y en el glosario de conceptos, sin imponer librerías ni requisitos adicionales al código).
+2. **Deber de Advertencia:** Cada vez que el usuario proponga un cambio, eliminación o diseño, el asistente **debe contrastarlo contra las Fuentes A, B y C** y contra los estándares de accesibilidad (WCAG 2.1/2.2 Nivel AA). Si algo contradice, omite o pone en riesgo algún punto de la rúbrica o de las propuestas previas, el asistente **debe advertirlo explícitamente** antes de implementar. El usuario siempre tiene la palabra final tras recibir la advertencia.
+3. **Cero Suposiciones Técnicas + Explicación Previa del "Por Qué" y de las Opciones:**
    - Ninguna decisión técnica, de diseño, flujo o esquema se asume por cuenta propia; siempre se consulta primero con el usuario.
-   - **Regla de Explicación Previa:** Cada vez que el asistente haga una pregunta al usuario, **debe explicar primero en el texto de forma detallada cómo funciona cada opción, sus ventajas/desventajas y por qué recomienda una en particular**, antes de presentar las opciones de selección.
-4. **Documentación Profunda por Fase (`docs/phases/README-fase-XX.md` y `docs/CONCEPTOS_Y_DEFINICIONES.md`):**
+   - **Regla de Explicación Previa:** Cada vez que el asistente haga una pregunta al usuario, **debe explicar primero en el texto de forma detallada:**
+     1. **¿Por qué hay que tomar esta decisión?** (Cuál es el problema real o requerimiento del proyecto que nos obliga a elegir un camino).
+     2. **¿Cómo funciona cada opción, cuáles son sus ventajas y desventajas?**
+     3. **¿Cuál opción recomienda y por qué?** (Priorizando siempre cumplir las Fuentes A, B y C manteniendo el código compacto y libre de cosas innecesarias).
+4. **Documentación Profunda y Guía de Pruebas por Fase (`docs/phases/README-fase-XX.md` y `docs/CONCEPTOS_Y_DEFINICIONES.md`):**
    - En cada fase implementada se debe generar un archivo `docs/phases/README-fase-XX.md` que explique de lo general a lo específico qué hace la implementación en su conjunto y qué hace cada archivo, función, estado y propiedad en detalle.
+   - **Guía Obligatoria de Pruebas por Fase:** En cada fase (tanto dentro de `docs/phases/README-fase-XX.md` como en la respuesta al usuario) se debe incluir una sección práctica paso a paso indicando **cómo probar y verificar que todo lo implementado en esa fase funciona correctamente** (comandos de terminal, pruebas visuales en Expo Go / Web, pruebas de teclado y accesibilidad).
    - En paralelo se debe mantener actualizado `docs/CONCEPTOS_Y_DEFINICIONES.md` con todos los conceptos y definiciones importantes del proyecto (de lo general a lo específico).
-   - Ambos documentos se redactan asumiendo que el lector comprende el temario de `projectProposalDocs/agente-desarrollo-movil.md`, pero profundizando explícitamente en aquellos puntos del temario que son críticos para la **Defensa Técnica Oral (40% de la nota)**.
+   - Ambos documentos se redactan asumiendo que el lector comprende el temario de `docs/projectProposalDocs/agente-desarrollo-movil.md`, pero profundizando explícitamente en aquellos puntos que aunque en teoría se conozcan son muy importantes para entender y defender el proyecto.
 5. **Commit y Push al Cerrar cada Fase:** Solo cuando el usuario exprese conformidad y dé por completada una fase (Pieza de Lego), se actualiza el Checklist de Progreso en la Sección 4 de este archivo y se realiza `git add`, `git commit` descriptivo y `git push` al repositorio.
 
 ---
@@ -53,8 +57,8 @@ Pasado el **Login / Registro**, la aplicación cuenta con una barra de navegaci�
 
 ## 4. Mapa de Fases y Checklist Vivo de Progreso (Memoria para Agentes)
 - [x] **Fase 00 (`00-overview-and-rules.md`):** Definición de arquitectura SDD, flujo estilo Pinterest y reglas de trabajo (Commit `159a267`).
-- [x] **Fase 01 (`01-accessibility-and-theme.md`):** Motor de Accesibilidad, Tokens de Tema, Nombres de Color y Tipografía Adaptativa (`docs/phases/README-fase-01.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).
-- [ ] **Fase 02 (`02-ui-primitives.md`):** Primitivas Accesibles Móvil + Web (`AccessiblePressable`, `AccessibleCollapsible`, `VisualAlertBanner`, `StepZoomImage`, `ColorSwatchBadge`) *(Decisión técnica aprobada: usar `expo-speech` + `expo-haptics` con fallback Web)*.
+- [x] **Fase 01 (`01-accessibility-and-theme.md`):** Motor de Accesibilidad, Tokens de Tema, Nombres de Color y Tipografía Adaptativa (`docs/phases/README-fase-01.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md` — Commit `a2114a1`).
+- [x] **Fase 02 (`02-ui-primitives.md`):** Primitivas Accesibles Móvil + Web (`AccessiblePressable`, `AccessibleCollapsible`, `VisualAlertBanner`, `StepZoomImage`, `ColorSwatchBadge` + Laboratorio de pruebas en `explore.tsx` + `docs/phases/README-fase-02.md`).
 - [ ] **Fase 03 (`03-supabase-and-auth.md`):** Ajuste aditivo Forma 2 en Supabase, Cliente Supabase/R2 y Autenticación.
 - [ ] **Fase 04 (`04-navigation-and-profile.md`):** Navegación de 3 Pestañas + Pantalla de Usuario con Desplegable de Accesibilidad.
 - [ ] **Fase 05 (`05-feed-and-triple-filter.md`):** Feed 100% Humano + Barra Persistente con Botón Desplegable de Filtro Triple y Tolerancia a Errores.

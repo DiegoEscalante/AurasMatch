@@ -1,6 +1,6 @@
 # Glosario Maestro de Conceptos y Definiciones Técnicas — AurasMatch
 
-> **Propósito de este documento:** Explicar de lo **general a lo específico** todos los conceptos arquitectónicos, móviles, de accesibilidad y de visión por computadora utilizados en **AurasMatch**, conectándolos directamente con el temario de las 16 semanas del curso ([`projectProposalDocs/agente-desarrollo-movil.md`](../projectProposalDocs/agente-desarrollo-movil.md)) para dominar la **Defensa Técnica Individual (40% de la nota)**.
+> **Propósito de este documento:** Explicar de lo **general a lo específico** todos los conceptos arquitectónicos, móviles, de accesibilidad y de visión por computadora utilizados en **AurasMatch**, conectándolos con la base vista en [`docs/projectProposalDocs/agente-desarrollo-movil.md`](./projectProposalDocs/agente-desarrollo-movil.md) y con las 3 reglas del proyecto ([`Course Project Phase 3`](./projectProposalDocs/Course%20Project%20Phase%203%20-%20Entrega%20Final%20(Proyecto%20Final%20Desarrollo%20Móvil).md), [`Project Proposal.pdf`](./projectProposalDocs/Project%20Proposal.pdf) y [`2ndPhaseProposal.pdf`](./projectProposalDocs/2ndPhaseProposal.pdf)).
 
 ---
 
@@ -80,3 +80,30 @@ $$\text{Ratio de Contraste} = \frac{L_{\text{más claro}} + 0.05}{L_{\text{más 
 * **Cómo funciona `CIELAB`:** Separa la **Luminancia ($L^*$)** en un canal independiente y deja la cromaticidad pura en dos ejes oponentes basados en la visión humana: **$a^*$ (verde $\leftrightarrow$ rojo)** y **$b^*$ (azul $\leftrightarrow$ amarillo)**.
 * **Distancia $\Delta E$ (Delta E):** Es la distancia euclidiana en el espacio tridimensional $(L^*, a^*, b^*)$. Tanto el backend (para recomendar cuál de los 3,085 cosméticos de la tabla `products` es el más idéntico al maquillaje de la foto) como el frontend en [`color-names.ts`](../frontend/src/utils/color-names.ts) (para traducir un código `HEX` a su nombre de color en español y filtrar por color en el Feed) utilizan $\Delta E$ en `CIELAB`.
 
+
+
+---
+
+## Nivel 5: Primitivas de Interacción Accesible Multiplataforma (Fase 02)
+
+### 13. Área Táctil Mínima (`48x48 dp`) y `hitSlop` (Semana 6 + WCAG 2.5.5 / 2.5.8)
+* **¿Qué es?** En pantallas táctiles, un botón visualmente pequeño (por ejemplo, un ícono de $20 \times 20\text{ px}$) es muy difícil de acertar para personas con temblores esenciales, parálisis cerebral o cuando se usa el teléfono con una sola mano en movimiento.
+* **Diferencia entre tamaño visual y área de captura (`hitSlop`):**
+  * `minWidth: 48` y `minHeight: 48` (`MinTouchTargetSize` en [`theme.ts`](../frontend/src/constants/theme.ts)) aseguran que la caja del botón mida al menos $48 \times 48\text{ dp}$ (superando el mínimo de $44 \times 44\text{ pt}$ de iOS Human Interface Guidelines y Semana 6 del curso).
+  * `hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}` en [`AccessiblePressable`](../frontend/src/components/ui/accessible-pressable.tsx) extiende además un margen invisible de $8\text{ dp}$ alrededor del botón donde el sistema operativo sigue reconociendo el toque sin alterar el diseño visual (*layout*).
+
+### 14. Patrón *Disclosure* y Salto de Bloques (*WCAG 2.4.1 Bypass Blocks*)
+* **El problema:** Si una pantalla tiene un panel con 15 botones de filtro o de ajustes de accesibilidad siempre visibles en la parte superior, un usuario que navega con la tecla `Tab` o haciendo *swipe* con *TalkBack/VoiceOver* tendría que recorrer los 15 controles uno por uno cada vez que entra a la pantalla antes de llegar a las fotos.
+* **La solución en AurasMatch ([`AccessibleCollapsible`](../frontend/src/components/ui/collapsible.tsx)):**
+  * Agrupa cualquier bloque denso de controles detrás de un único botón desplegable con `accessibilityRole="button"` y `accessibilityState={{ expanded: isOpen }}` (`aria-expanded` en Web).
+  * Mientras está cerrado (`isOpen === false`), los controles hijos no existen en el árbol de accesibilidad, permitiendo saltar todo el bloque con un solo `Tab` o *swipe*.
+
+### 15. Regiones Vivas (`accessibilityLiveRegion` / `aria-live`) y Paridad Visual-Háptica
+* **¿Qué es una Región Viva (*Live Region*)?** Normalmente, un lector de pantalla solo lee el elemento donde el usuario tiene puesto el foco. Si aparece un mensaje de error o confirmación en otra parte de la pantalla, una persona ciega no se enteraría. Al marcar [`VisualAlertBanner`](../frontend/src/components/ui/visual-alert-banner.tsx) con `accessibilityRole="alert"`, `accessibilityLiveRegion="assertive"` (o `"polite"`) y `'aria-live'` en Web, el lector de pantalla anuncia el mensaje automáticamente sin mover el foco del usuario.
+* **Paridad para Diversidad Auditiva:** Al mismo tiempo, para usuarios sordos o con hipoacusia (`2ndPhaseProposal.pdf` Sección V.C), ninguna alerta depende de un pitido sonoro: toda alerta combina el banner visual de alto contraste con ícono semántico (`ℹ️`, `✅`, `⚠️`, `⛔`) y un pulso físico en el motor háptico del teléfono (`expo-haptics`).
+
+### 16. Síntesis de Voz Multiplataforma (`Text-to-Speech` / `Voice-to-Speech`)
+* **¿Cómo funciona en AurasMatch ([`a11y-feedback.ts`](../frontend/src/utils/a11y-feedback.ts))?**
+  * En **Android e iOS nativo**, el módulo `expo-speech` se comunica con el motor TTS del sistema operativo (`android.speech.tts.TextToSpeech` / `AVSpeechSynthesizer` en iOS) configurando el idioma `'es-ES'`.
+  * En **Web**, React Native Web delega en la API estándar del navegador `window.speechSynthesis` instanciando un objeto `SpeechSynthesisUtterance`.
+  * Antes de hablar, siempre se invoca `stopSpeaking()` para cancelar cualquier lectura previa en cola y evitar superposición de audio.

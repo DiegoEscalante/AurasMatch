@@ -110,9 +110,10 @@ export function getSpanishColorName(hex?: string | null): string {
   return getClosestColorFamily(hex).name;
 }
 
-export function formatAccessibleColorLabel(hex?: string | null): string {
-  if (!hex) return 'Tono sin especificar';
+export function formatAccessibleColorLabel(hex?: string | null, regionLabel?: string): string {
+  if (!hex) return regionLabel ? `${regionLabel}: Tono sin especificar` : 'Tono sin especificar';
   const normalizedHex = hex.startsWith('#') ? hex.toUpperCase() : `#${hex.toUpperCase()}`;
-  return `${getSpanishColorName(normalizedHex)} (${normalizedHex})`;
+  const baseLabel = `${getSpanishColorName(normalizedHex)} (${normalizedHex})`;
+  return regionLabel ? `${regionLabel}: ${baseLabel}` : baseLabel;
 }
 

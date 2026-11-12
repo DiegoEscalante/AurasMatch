@@ -102,3 +102,26 @@ Centraliza todas las preferencias de accesibilidad en un `React Context` expuest
 * **`_layout.tsx`:** Envuelve toda la aplicación dentro de `<AccessibilityProvider>` para que cualquier pantalla, modal o tab tenga acceso inmediato a `useAccessibility()` y `useTheme()`.
 * **`animated-icon.tsx`:** Consume `const { prefs } = useAccessibility()`. Si `prefs.reduced_motion` es `true`, oculta de inmediato el `SplashScreen` y omite la animación elástica de escala/rotación (cumpliendo la Promesa B.2 de `2ndPhaseProposal.pdf` sobre control de animaciones y epilepsia fotosensible).
 
+
+
+---
+
+## 4. Cómo Probar la Implementación de la Fase 01 Paso a Paso
+
+1. **Verificación Estática de Tipos (Compilación sin errores):**
+   * Abre una terminal en la carpeta `frontend` y ejecuta:
+     ```bash
+     cd frontend
+     npx tsc --noEmit
+     ```
+   * **Resultado esperado:** El comando termina sin ningún mensaje de error (código `0`), confirmando que `ThemePalette`, `AccessibilityPrefs`, `useAccessibility()` y `color-names.ts` están 100% tipados.
+
+2. **Prueba Rápida del Traductor Perceptual de Colores (`HEX` $\rightarrow$ `CIELAB` $\rightarrow$ Español):**
+   * Todos los componentes que usen `getSpanishColorName('#3B3735')` o `formatAccessibleColorLabel('#B28378', 'Labios')` convierten automáticamente el código hexadecimal a su familia cromática en español (`"Negro / Carbón oscuro (#3B3735)"`, `"Labios: Nude / Beige suave (#B28378)"`).
+
+3. **Prueba Visual en Emulador / Expo Go / Navegador Web:**
+   * Ejecuta `cd frontend && npx expo start` (presiona `w` para abrir en navegador web o escanea el QR con Expo Go en tu celular).
+   * En la pestaña **Explore** (o desde el Menú Desplegable de Accesibilidad en Perfil a partir de la Fase 04), cambia entre:
+     * **Tema Claro / Oscuro / Alto Contraste (WCAG AAA):** Verifica que en Alto Contraste el fondo pase a negro puro (`#000000`), los textos a blanco (`#FFFFFF`) y amarillo (`#FFFF00`), y los contenedores dibujen bordes visibles de `2px`.
+     * **Fuente para Dislexia (*Sans-Serif* y *Monoespaciada*) y Escalado hasta 200%:** Verifica que al subir la escala de texto a `1.5x` o `2.0x`, todas las etiquetas `<ThemedText>` crezcan proporcionalmente junto con su interlineado (`lineHeight`) sin que las letras se corten (*clipping*).
+     * **Reducir Movimiento (`reduced_motion`):** Verifica que al activarlo, el ícono animado de inicio (`AnimatedIcon`) omita los giros y rebotes.
