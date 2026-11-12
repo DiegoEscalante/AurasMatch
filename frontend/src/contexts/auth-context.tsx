@@ -236,6 +236,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const continueWithBotDemoProfile = useCallback(async () => {
     setAuthError(null);
     const botProfile = await ensureUserProfile(BOT_PROFILE_ID, 'aurasmatch_bot');
+    const demoUser = {
+      id: BOT_PROFILE_ID,
+      email: 'bot@aurasmatch.local',
+      app_metadata: {},
+      user_metadata: { username: 'aurasmatch_bot' },
+      aud: 'authenticated',
+      created_at: new Date().toISOString(),
+    } as User;
+    setUser(demoUser);
     setProfile({
       ...botProfile,
       id: BOT_PROFILE_ID,

@@ -453,6 +453,7 @@ interface LocalLookOverrides {
   descriptionsByLookId: Record<string, string>;
   appealsByLookId: Record<string, AppealStatus>;
   commentsByLookId: Record<string, LookCommentItem[]>;
+  userCreatedLooks: LookRow[];
 }
 
 const DEFAULT_LOCAL_OVERRIDES: LocalLookOverrides = {
@@ -461,13 +462,19 @@ const DEFAULT_LOCAL_OVERRIDES: LocalLookOverrides = {
   descriptionsByLookId: {},
   appealsByLookId: {},
   commentsByLookId: {},
+  userCreatedLooks: [],
 };
 
 export async function getLocalLookOverrides(): Promise<LocalLookOverrides> {
   try {
     const raw = await safeAuthStorage.getItem(LOCAL_INTERACTIONS_KEY);
     if (!raw) return DEFAULT_LOCAL_OVERRIDES;
-    return { ...DEFAULT_LOCAL_OVERRIDES, ...(JSON.parse(raw) as Partial<LocalLookOverrides>) };
+    const parsed = JSON.parse(raw) as Partial<LocalLookOverrides>;
+    return {
+      ...DEFAULT_LOCAL_OVERRIDES,
+      ...parsed,
+      userCreatedLooks: Array.isArray(parsed.userCreatedLooks) ? parsed.userCreatedLooks : [],
+    };
   } catch {
     return DEFAULT_LOCAL_OVERRIDES;
   }
@@ -475,6 +482,44 @@ export async function getLocalLookOverrides(): Promise<LocalLookOverrides> {
 
 export async function saveLocalLookOverrides(next: LocalLookOverrides): Promise<void> {
   await safeAuthStorage.setItem(LOCAL_INTERACTIONS_KEY, JSON.stringify(next));
+}
+
+export const IN_MEMORY_USER_LOOKS = new Map<string, LookRow>();
+
+/**
+ * Persists a newly uploaded or simulated look in memory, mirror, and local overrides
+ * so it immediately resolves in `fetchLookById` and displays in the feed.
+ */
+export async function saveUserCreatedLook(look: LookRow): Promise<void> {
+  // 1. In-memory map (synchronous and immune to localStorage size quotas)
+  IN_MEMORY_USER_LOOKS.set(look.id, look);
+
+  // 2. Prepend to mirror looks array
+  const mirrorIdx = REAL_SUPABASE_MIRROR_LOOKS.findIndex((l) => l.id === look.id);
+  if (mirrorIdx >= 0) {
+    REAL_SUPABASE_MIRROR_LOOKS[mirrorIdx] = look;
+  } else {
+    REAL_SUPABASE_MIRROR_LOOKS.unshift(look);
+  }
+
+  // 3. Persist in AsyncStorage
+  try {
+    const overrides = await getLocalLookOverrides();
+    const existingIdx = overrides.userCreatedLooks.findIndex((l) => l.id === look.id);
+    // Sanitize huge data URLs to avoid QuotaExceededError in localStorage
+    const storableLook: LookRow = {
+      ...look,
+      image_path: look.image_path.length > 50000 ? 'user_looks/saved-look.jpg' : look.image_path,
+    };
+    if (existingIdx >= 0) {
+      overrides.userCreatedLooks[existingIdx] = storableLook;
+    } else {
+      overrides.userCreatedLooks.unshift(storableLook);
+    }
+    await saveLocalLookOverrides(overrides);
+  } catch {
+    // Memory map ensures session availability
+  }
 }
 
 /**
@@ -575,9 +620,53 @@ export async function fetchLookById(
   lookId: string,
   currentUserId?: string | null
 ): Promise<LookRow | null> {
+  // 1. In-memory user looks map (guaranteed synchronous availability)
+  if (IN_MEMORY_USER_LOOKS.has(lookId)) {
+    const memLook = IN_MEMORY_USER_LOOKS.get(lookId)!;
+    const overrides = await getLocalLookOverrides();
+    const isLikedByMe = currentUserId
+      ? (memLook.liked_by || []).includes(currentUserId)
+      : overrides.likedLookIds.includes(lookId);
+    const isSavedByMe = overrides.savedLookIds.includes(lookId);
+
+    return {
+      ...memLook,
+      resolved_image_url:
+        memLook.resolved_image_url || resolveLookImageUrl(memLook.image_path, memLook.id),
+      is_liked_by_me: isLikedByMe,
+      is_saved_by_me: isSavedByMe,
+      description: overrides.descriptionsByLookId[lookId] || memLook.description || '',
+      appeal_status: overrides.appealsByLookId[lookId] || memLook.appeal_status || 'none',
+      comments: overrides.commentsByLookId[lookId] || memLook.comments || [],
+    };
+  }
+
   const overrides = await getLocalLookOverrides();
 
-  if (isSupabaseConfigured) {
+  // 2. Check userCreatedLooks in AsyncStorage overrides
+  const localUserLook = (overrides.userCreatedLooks || []).find((item) => item.id === lookId);
+  if (localUserLook) {
+    const isLikedByMe = currentUserId
+      ? (localUserLook.liked_by || []).includes(currentUserId)
+      : overrides.likedLookIds.includes(lookId);
+    const isSavedByMe = overrides.savedLookIds.includes(lookId);
+
+    return {
+      ...localUserLook,
+      resolved_image_url:
+        localUserLook.resolved_image_url ||
+        resolveLookImageUrl(localUserLook.image_path, localUserLook.id),
+      is_liked_by_me: isLikedByMe,
+      is_saved_by_me: isSavedByMe,
+      description: overrides.descriptionsByLookId[lookId] || localUserLook.description || '',
+      appeal_status: overrides.appealsByLookId[lookId] || localUserLook.appeal_status || 'none',
+      comments: overrides.commentsByLookId[lookId] || localUserLook.comments || [],
+    };
+  }
+
+  // 3. Query Supabase (only if lookId matches standard UUID syntax)
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lookId);
+  if (isSupabaseConfigured && isUUID) {
     try {
       const { data, error } = await supabase
         .from('looks')
@@ -620,7 +709,7 @@ export async function fetchLookById(
     }
   }
 
-  // Fallback mirror search
+  // 4. Fallback mirror search
   const found = REAL_SUPABASE_MIRROR_LOOKS.find((item) => item.id === lookId);
   if (!found) return null;
 
@@ -688,8 +777,9 @@ export async function fetchSimilarLooks(
 ): Promise<LookRow[]> {
   const overrides = await getLocalLookOverrides();
   const subcultures = currentLook.subculture || [];
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(currentLook.id);
 
-  if (isSupabaseConfigured) {
+  if (isSupabaseConfigured && isUUID) {
     try {
       const { data, error } = await supabase
         .from('looks')
@@ -740,4 +830,48 @@ export async function fetchSimilarLooks(
     is_saved_by_me: overrides.savedLookIds.includes(item.id),
   }));
 }
+
+/**
+ * Updates a look's description in Supabase and local overrides.
+ * Fulfills 2ndPhaseProposal.pdf Section V.D (Editable AI-suggested alt-text).
+ */
+export async function updateLookDescription(lookId: string, description: string): Promise<void> {
+  const overrides = await getLocalLookOverrides();
+  overrides.descriptionsByLookId[lookId] = description;
+  await saveLocalLookOverrides(overrides);
+
+  if (isSupabaseConfigured) {
+    try {
+      await supabase
+        .from('looks')
+        .update({ description })
+        .eq('id', lookId);
+    } catch {
+      // Local override persists offline
+    }
+  }
+}
+
+/**
+ * Requests a human appeal for a look rejected by the Anti-AI filter.
+ * Sets appeal_status = 'pending' in Supabase and local overrides.
+ * Fulfills Project Proposal.pdf Section IV.C (Mitigation of AI false positives).
+ */
+export async function requestLookAppeal(lookId: string): Promise<void> {
+  const overrides = await getLocalLookOverrides();
+  overrides.appealsByLookId[lookId] = 'pending';
+  await saveLocalLookOverrides(overrides);
+
+  if (isSupabaseConfigured) {
+    try {
+      await supabase
+        .from('looks')
+        .update({ appeal_status: 'pending' })
+        .eq('id', lookId);
+    } catch {
+      // Local override persists offline
+    }
+  }
+}
+
 

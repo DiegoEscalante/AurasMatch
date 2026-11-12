@@ -225,6 +225,14 @@ export function LookCard({
             </ThemedText>
           </View>
 
+          {/* Description / Alt-Text (placed above swatches for clear contextual reading) */}
+          <ThemedText
+            style={[styles.descriptionText, { color: theme.text }]}
+            numberOfLines={isSingleColumn ? 3 : 2}
+          >
+            {look.description}
+          </ThemedText>
+
           {/* Extracted Swatches preview */}
           {regionEntries.length > 0 && (
             <View style={styles.swatchRow} accessible={false}>
@@ -239,14 +247,6 @@ export function LookCard({
               ))}
             </View>
           )}
-
-          {/* Description */}
-          <ThemedText
-            style={[styles.descriptionText, { color: theme.text }]}
-            numberOfLines={isSingleColumn ? 3 : 2}
-          >
-            {look.description}
-          </ThemedText>
         </View>
       </AccessiblePressable>
 
@@ -413,7 +413,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.one,
-    marginVertical: Spacing.one,
+    marginTop: Spacing.half,
+    marginBottom: Spacing.half,
   },
   swatchItem: {
     marginRight: Spacing.one,
@@ -423,6 +424,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginTop: 2,
+    marginBottom: Spacing.half,
   },
   actionsBar: {
     flexDirection: 'row',

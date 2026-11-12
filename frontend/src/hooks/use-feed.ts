@@ -188,16 +188,27 @@ export function useFeed(): UseFeedFilterReturn {
         );
       }
 
-      setLooks(fetchedList);
+      // Prepend user-created looks so newly published looks appear at the top of the feed
+      const userLooks = (overrides.userCreatedLooks || [])
+        .filter((l) => l.is_human_verified)
+        .map((item) => hydrateLook(item, currentUserId, savedSet, overrides));
+
+      const existingIds = new Set(userLooks.map((l) => l.id));
+      const combined = [...userLooks, ...fetchedList.filter((l) => !existingIds.has(l.id))];
+
+      setLooks(combined);
     } catch (err: any) {
       setErrorMessage('No se pudieron sincronizar las publicaciones con el servidor.');
       // Fallback
       const overrides = await getLocalLookOverrides();
-      setLooks(
-        REAL_SUPABASE_MIRROR_LOOKS.filter((l) => l.is_human_verified).map((item) =>
-          hydrateLook(item, currentUserId, new Set(overrides.savedLookIds), overrides)
-        )
+      const userLooks = (overrides.userCreatedLooks || [])
+        .filter((l) => l.is_human_verified)
+        .map((item) => hydrateLook(item, currentUserId, new Set(overrides.savedLookIds), overrides));
+      const existingIds = new Set(userLooks.map((l) => l.id));
+      const fallbackList = REAL_SUPABASE_MIRROR_LOOKS.filter((l) => l.is_human_verified).map((item) =>
+        hydrateLook(item, currentUserId, new Set(overrides.savedLookIds), overrides)
       );
+      setLooks([...userLooks, ...fallbackList.filter((l) => !existingIds.has(l.id))]);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);

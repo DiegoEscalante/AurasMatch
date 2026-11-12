@@ -48,8 +48,8 @@ export interface UseLookDetailResult {
 }
 
 export function useLookDetail(lookId: string): UseLookDetailResult {
-  const { user, isAuthenticated } = useAuth();
-  const currentUserId = user?.id || null;
+  const { user, profile, isAuthenticated } = useAuth();
+  const currentUserId = user?.id || profile?.id || null;
 
   const [look, setLook] = useState<LookRow | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);

@@ -209,4 +209,36 @@ $$\text{Ratio de Contraste} = \frac{L_{\text{más claro}} + 0.05}{L_{\text{más 
   * Al extraer un tono facial con MediaPipe, AurasMatch busca en la tabla `public.products` (con más de 3,000 tonos indexados) el cosmético cuya distancia euclidiana $\Delta E = \sqrt{(\Delta L^*)^2 + (\Delta a^*)^2 + (\Delta b^*)^2}$ sea mínima.
   * El popup del producto exhibe estas coordenadas para dar total transparencia al usuario sobre la exactitud cromática del maquillaje recomendado.
 
+---
+
+## Nivel 10: Subida, Análisis en Cloud Run, Alt-Text Accesible y Apelación Anti-IA (Fase 07)
+
+### 31. Captura de Imagen Multiplataforma y Gestión de Permisos Nativos (`expo-image-picker`)
+* **¿Por qué es fundamental para la experiencia móvil?**
+  * En Android e iOS, el acceso a la cámara y a la galería requiere declarar permisos explícitos en el manifiesto (`CAMERA`, `READ_MEDIA_IMAGES` en Android, `NSCameraUsageDescription` en iOS).
+  * `expo-image-picker` abstrae estas APIs del sistema operativo garantizando que en móviles nativos la cámara se abra de forma fluida con proporciones optimizadas ($4:5$, `quality: 0.82`), mientras que en la web mapea internamente al selector estándar accesible `<input type="file" accept="image/*">`, cumpliendo la Regla Multiplataforma Móvil-Primero.
+
+### 32. Autoguardado Asíncrono sin Expiración en `AsyncStorage` (`2ndPhaseProposal.pdf` Sección V.B)
+* **El problema de accesibilidad cognitiva:**
+  * Usuarios con discapacidades cognitivas, problemas de memoria a corto plazo, fatiga mental o déficit de atención requieren pausas prolongadas mientras preparan una publicación. Las aplicaciones convencionales suelen cancelar borradores o cerrar sesiones de forma abrupta por inactividad.
+* **Implementación en [`use-upload-look.ts`](../frontend/src/hooks/use-upload-look.ts):**
+  * Toda fotografía seleccionada, resultado de análisis preliminar y texto editado por el usuario se serializa instantáneamente en el almacenamiento persistente local (`@aurasmatch/upload_look_draft_v1`).
+  * No existe ningún temporizador que borre la información; al cambiar de pestaña en la barra de navegación o reiniciar la aplicación, el estado se restaura de manera idéntica y se le informa con un `VisualAlertBanner` accesible.
+
+### 33. Texto Descriptivo (Alt-Text) Generado por IA y Editable por el Creador (`2ndPhaseProposal.pdf` Sección V.D)
+* **La promesa de la Fase 2:**
+  * Para garantizar una verdadera inclusión para personas con discapacidad visual total o baja visión que navegan con lectores de pantalla (TalkBack, VoiceOver o NVDA), cada imagen de maquillaje debe contar con una descripción detallada que no dependa únicamente de un "Título".
+* **Implementación Técnica:**
+  * El motor de análisis inspecciona la subcultura clasificada y los tonos dominantes extraídos en espacio CIELAB ($L^*, a^*, b^*$).
+  * Genera una descripción automática en lenguaje natural en español (ej. *"Fotografía de maquillaje con estética estilo Clean Girl. En labios destaca un tono Nude / Beige suave (#C59B87), en párpados destaca tono Coral cálido (#E07A5F)... Foto 100% verificada de origen humano."*).
+  * Cumpliendo rigurosamente la promesa de la propuesta, la app **no bloquea el texto**, sino que se lo presenta al usuario en un campo `TextInput` accesible para que pueda editarlo, enriquecerlo o corregirlo antes de publicarlo en Supabase (`looks.description`).
+
+### 34. Mitigación de Falsos Positivos Anti-IA y Mecanismo de Apelación Humana (`Project Proposal.pdf` Sección IV.C)
+* **El dilema de la moderación sintética:**
+  * Tal como se identificó en los riesgos técnicos del `Project Proposal.pdf` (Sección IV.C), ciertos maquillajes reales con base de alta cobertura, piel extremadamente suave o filtros de iluminación pueden generar puntajes elevados de sospecha sintética en el motor de textura dérmica y análisis espectral FFT ($\text{ai\_confidence\_score} \ge 0.50$).
+* **Resolución mediante Apelación:**
+  * En lugar de simplemente rechazar o silenciar al usuario, la aplicación exhibe un badge de alerta transparente explicando el motivo del filtro.
+  * Habilita un botón accesible de acción táctil amplia ($\ge 48 \times 48\text{ dp}$): **"Solicitar Apelación Humana"**, el cual actualiza el registro en Supabase con `appeal_status = 'pending'`, notificando al usuario que un moderador humano verificará la autenticidad de su trabajo artístico para integrarlo al feed.
+
+
 
