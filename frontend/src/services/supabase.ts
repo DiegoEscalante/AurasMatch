@@ -519,13 +519,14 @@ export async function toggleLookSaved(
   } else {
     const { data: insertedRows, error: insertErr } = await supabase
       .from('saved_looks')
-      .upsert(
-        { user_id: userId, look_id: lookId },
-        { onConflict: 'user_id,look_id' }
-      )
+      .insert({ user_id: userId, look_id: lookId })
       .select('look_id');
 
     if (insertErr) {
+      if (String(insertErr.code || '') === '23505') {
+        notifyLookDataChanged({ type: 'save', lookId, userId, isSaved: true });
+        return { success: true, isSaved: true };
+      }
       throw new Error(insertErr.message || 'Error al insertar en saved_looks');
     }
 
@@ -570,27 +571,32 @@ export async function saveUserCreatedLook(look: LookRow): Promise<void> {
   }
   const { data, error } = await supabase
     .from('looks')
-    .upsert(
-      {
-        id: look.id,
-        user_id: look.user_id,
-        image_path: look.image_path,
-        is_human_verified: look.is_human_verified,
-        ai_confidence_score: look.ai_confidence_score,
-        subculture: look.subculture,
-        subculture_confidence_score: look.subculture_confidence_score,
-        extracted_regions: look.extracted_regions,
-        tags: look.tags,
-        description: look.description,
-        liked_by: look.liked_by || [],
-        comments: look.comments || [],
-        appeal_status: look.appeal_status || 'none',
-      },
-      { onConflict: 'id' }
-    )
+    .insert({
+      id: look.id,
+      user_id: look.user_id,
+      image_path: look.image_path,
+      is_human_verified: look.is_human_verified,
+      ai_confidence_score: look.ai_confidence_score,
+      subculture: look.subculture,
+      subculture_confidence_score: look.subculture_confidence_score,
+      extracted_regions: look.extracted_regions,
+      tags: look.tags,
+      description: look.description,
+      liked_by: look.liked_by || [],
+      comments: look.comments || [],
+      appeal_status: look.appeal_status || 'none',
+    })
     .select('id');
 
   if (error) {
+    if (String(error.code || '') === '23505') {
+      await updateLookDescription(look.id, look.description);
+      if (look.appeal_status && look.appeal_status !== 'none') {
+        await requestLookAppeal(look.id);
+      }
+      notifyLookDataChanged({ type: 'created', lookId: look.id });
+      return;
+    }
     throw new Error(`Error al guardar publicación en Supabase: ${error.message}`);
   }
   if (!Array.isArray(data) || data.length === 0) {

@@ -24,6 +24,13 @@
    - **Prohibición de Atributos Web Incompatibles:** Queda terminantemente prohibido inyectar roles o propiedades exclusivas de HTML/WAI-ARIA que no existan en el diccionario nativo de React Native (`AccessibilityRole`). Ejemplo crítico: `accessibilityRole="region"` NO existe en el enum nativo de `RCTViewManager` / `ReactViewManager` y rompe la aplicación en móvil al instante con: `Error while updating 'accessibilityrole' of a view managed by: RCTView`.
    - **Guardas de Plataforma Obligatorias:** Cuando se requiera un atributo semántico exclusivo de Web (como `role="region"`), **debe protegerse obligatoriamente con guardas de plataforma:** `{...(Platform.OS === 'web' ? { role: 'region' as const } : {})}`. En móvil nativo deben usarse exclusivamente las APIs oficiales de React Native Core (`accessible={true}`, `accessibilityLabel`, `accessibilityHint`, `accessibilityState`).
    - Toda prueba y verificación debe asegurar que los botones, desplegables, overlays y modales no fallen al ejecutarse en Expo Go / emuladores móviles de Android y dispositivos iOS.
+7. **Regla de Introspección Obligatoria Previa a Cada Implementación o Instrucción:**
+   - Antes de implementar cambios de código/BD o indicarle al usuario que ejecute un comando o script (SQL, CLI, configuración), el asistente **debe ejecutar y transparentar una lista de verificación introspectiva** sobre:
+     1. **Necesidad real:** ¿Es estrictamente necesario lo que voy a implementar o pedir para resolver lo solicitado, o existe una alternativa más simple/mínima sin efectos colaterales?
+     2. **Reutilización:** ¿Existe ya en el repositorio algún helper, hook, componente o mecanismo que resuelva esto en lugar de duplicarlo o crearlo desde cero?
+     3. **Seguridad e impacto:** ¿Es seguro ejecutar esto respecto a la base de datos en producción, políticas RLS, sesiones de usuario, reglas de accesibilidad WCAG, frontend móvil/web y conexión con el backend (el cual permanece intacto)?
+     4. **Evidencia verificada:** ¿Qué comprobé directamente en archivos, historial o respuestas reales del entorno, y qué riesgos residuales o pasos reversibles existen?
+   - Si una acción recomendada toca infraestructura externa (como Supabase SQL Editor), se debe priorizar explicar qué cambia exactamente, ofrecer primero una verificación de solo lectura cuando sea útil y distinguir entre la corrección mínima necesaria y mejoras opcionales.
 
 ---
 
@@ -69,5 +76,5 @@ Pasado el **Login / Registro**, la aplicación cuenta con una barra de navegaci�
 - [x] **Fase 05 (`05-feed-and-triple-filter.md`):** Feed 100% Humano + Barra Persistente con Botón Desplegable de Filtro Triple y Tolerancia a Errores (`docs/phases/README-fase-05.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).
 - [x] **Fase 06 (`06-look-detail-and-product-popup.md`):** Detalle del Look estilo Pinterest + Popup de Producto con Focus Trap + Mini-feed Similar (`docs/phases/README-fase-06.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).
 - [x] **Fase 07 (`07-upload-and-ai-analysis.md`):** Pantalla de Subida y Análisis IA con Cloud Run + Alt-Text IA + Apelación (`docs/phases/README-fase-07.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).
-- [ ] **Fase 08 (`08-low-priority-extras.md`):** Extras de Baja Prioridad (Comentarios desplegables y Controles Asistidos de Comandos de Voz).
-- [ ] **Fase 09 (`09-final-delivery-docs.md`):** `README.md` Raíz, Matriz Trazable Corte 2 vs. Corte 3 y Documento Técnico Final.
+- [x] **Fase 08 (`08-low-priority-extras.md`):** Extras de Baja Prioridad (Comentarios desplegables y Controles Asistidos de Comandos de Voz) (`docs/phases/README-fase-08.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).
+- [x] **Fase 09 (`09-final-delivery-docs.md`):** `README.md` Raíz, Matriz Trazable Corte 2 vs. Corte 3 y Documento Técnico Final (`README.md` + `docs/Entrega_Final_AurasMatch.md` + `docs/CONCEPTOS_Y_DEFINICIONES.md`).

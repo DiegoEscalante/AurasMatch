@@ -57,8 +57,8 @@ export function LightingGuideModal({ visible, onClose }: LightingGuideModalProps
             },
           ]}
           accessible={true}
-          accessibilityRole="dialog"
           accessibilityLabel="Ventana emergente: Guía de Iluminación y Extracción Facial"
+          {...(Platform.OS === 'web' ? { role: 'dialog' as const, 'aria-modal': true } : {})}
         >
           {/* Header */}
           <View style={styles.dialogHeader}>

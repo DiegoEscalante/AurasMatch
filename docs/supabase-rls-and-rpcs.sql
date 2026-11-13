@@ -1,101 +1,32 @@
 -- ============================================================================
--- AurasMatch — Políticas RLS, Funciones RPC Atómicas y Trigger de Perfiles
+-- AurasMatch — Migración Consolidada y Quirúrgica para `public.looks`
 -- ============================================================================
--- Ejecutar este script una vez en:
+-- Ejecutar este script UNA SOLA VEZ en:
 --   Supabase Dashboard -> SQL Editor -> New query -> Run
 --
--- Objetivo:
---   1. Permitir que la app móvil use únicamente la clave pública (anon/publishable)
---      sin exponer jamás sb_secret_... en el frontend.
---   2. Corregir el bloqueo silencioso (0 filas actualizadas) en `public.looks`
---      para Likes, Comentarios, Alt-Text (`description`) y Apelaciones (`appeal_status`).
---   3. Garantizar que todo usuario nuevo creado por Supabase Auth reciba su fila
---      en `public.profiles` automáticamente, evitando errores de FK en `saved_looks` y `looks`.
+-- Alcance verificado por introspección sobre `pg_policies`:
+--   * `products`, `profiles`, `saved_looks` y `looks` (SELECT/INSERT/DELETE)
+--     ya cuentan con políticas activas funcionales y NO se alteran.
+--   * No crea triggers sobre `auth.users` (el cliente ya sincroniza perfiles
+--     mediante `ensureUserProfile()`).
+--   * No afecta al backend en Cloud Run (`service_role` omite RLS y solo hace INSERT).
+--
+-- Qué resuelve en una sola corrida:
+--   1. Habilita `UPDATE` seguro para el autor en `public.looks` (`looks_update_own`),
+--      desbloqueando la publicación tras análisis Cloud Run (`updateLookDescription`),
+--      la edición de Alt-Text y las apelaciones (`requestLookAppeal`).
+--   2. Protege columnas de verificación Anti-IA (`protect_look_verification_columns`)
+--      para que ningún cliente altere `user_id`, `is_human_verified` o `ai_confidence_score`.
+--   3. Expone los RPCs atómicos `toggle_look_like` y `add_look_comment` para que
+--      cualquier usuario autenticado pueda dar Me gusta o comentar en looks ajenos.
+--   4. Recarga la caché de esquema de PostgREST inmediatamente.
 -- ============================================================================
 
--- 1. Asegurar permisos de esquema/tablas y habilitar RLS
+-- 1. Asegurar permisos base y privilegio UPDATE para `authenticated` en `public.looks`
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT SELECT ON public.products TO anon, authenticated;
-GRANT SELECT ON public.profiles TO anon, authenticated;
-GRANT INSERT, UPDATE ON public.profiles TO authenticated;
-GRANT SELECT ON public.looks TO anon, authenticated;
-GRANT INSERT, UPDATE, DELETE ON public.looks TO authenticated;
-GRANT SELECT, INSERT, DELETE ON public.saved_looks TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.looks TO authenticated;
 
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.looks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.saved_looks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
-
--- 2. Políticas de `public.products` (catálogo público de solo lectura)
-DROP POLICY IF EXISTS "products_select_public" ON public.products;
-CREATE POLICY "products_select_public"
-  ON public.products
-  FOR SELECT
-  TO anon, authenticated
-  USING (true);
-
--- 3. Políticas de `public.profiles`
-DROP POLICY IF EXISTS "profiles_select_public" ON public.profiles;
-CREATE POLICY "profiles_select_public"
-  ON public.profiles
-  FOR SELECT
-  TO anon, authenticated
-  USING (true);
-
-DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
-CREATE POLICY "profiles_insert_own"
-  ON public.profiles
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (auth.uid() = id);
-
-DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
-CREATE POLICY "profiles_update_own"
-  ON public.profiles
-  FOR UPDATE
-  TO authenticated
-  USING (auth.uid() = id)
-  WITH CHECK (auth.uid() = id);
-
--- 4. Políticas de `public.saved_looks`
-DROP POLICY IF EXISTS "saved_looks_select_own" ON public.saved_looks;
-CREATE POLICY "saved_looks_select_own"
-  ON public.saved_looks
-  FOR SELECT
-  TO authenticated
-  USING (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "saved_looks_insert_own" ON public.saved_looks;
-CREATE POLICY "saved_looks_insert_own"
-  ON public.saved_looks
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "saved_looks_delete_own" ON public.saved_looks;
-CREATE POLICY "saved_looks_delete_own"
-  ON public.saved_looks
-  FOR DELETE
-  TO authenticated
-  USING (auth.uid() = user_id);
-
--- 5. Políticas de `public.looks`
-DROP POLICY IF EXISTS "looks_select_public" ON public.looks;
-CREATE POLICY "looks_select_public"
-  ON public.looks
-  FOR SELECT
-  TO anon, authenticated
-  USING (true);
-
-DROP POLICY IF EXISTS "looks_insert_own" ON public.looks;
-CREATE POLICY "looks_insert_own"
-  ON public.looks
-  FOR INSERT
-  TO authenticated
-  WITH CHECK (auth.uid() = user_id);
-
--- Permite al autor actualizar su propio look (ej. description / Alt-Text y appeal_status)
+-- 2. Política UPDATE solo para el autor de la publicación (Alt-Text y Apelaciones)
 DROP POLICY IF EXISTS "looks_update_own" ON public.looks;
 CREATE POLICY "looks_update_own"
   ON public.looks
@@ -104,14 +35,7 @@ CREATE POLICY "looks_update_own"
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "looks_delete_own" ON public.looks;
-CREATE POLICY "looks_delete_own"
-  ON public.looks
-  FOR DELETE
-  TO authenticated
-  USING (auth.uid() = user_id);
-
--- Protege campos críticos Anti-IA ante modificaciones directas desde clientes con JWT de usuario
+-- 3. Trigger protector de columnas Anti-IA ante modificaciones desde el cliente
 CREATE OR REPLACE FUNCTION public.protect_look_verification_columns()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -136,7 +60,7 @@ CREATE TRIGGER trg_protect_look_verification
   FOR EACH ROW
   EXECUTE FUNCTION public.protect_look_verification_columns();
 
--- 6. RPC Atómica: Me Gusta de cualquier usuario autenticado sobre cualquier look
+-- 4. RPC Atómica: Me Gusta de cualquier usuario autenticado sobre cualquier look
 CREATE OR REPLACE FUNCTION public.toggle_look_like(p_look_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -188,7 +112,7 @@ $$;
 REVOKE ALL ON FUNCTION public.toggle_look_like(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.toggle_look_like(uuid) TO authenticated;
 
--- 7. RPC Atómica: Comentarios de cualquier usuario autenticado sobre cualquier look
+-- 5. RPC Atómica: Comentarios de cualquier usuario autenticado sobre cualquier look
 CREATE OR REPLACE FUNCTION public.add_look_comment(
   p_look_id uuid,
   p_comment jsonb
@@ -266,46 +190,5 @@ $$;
 REVOKE ALL ON FUNCTION public.add_look_comment(uuid, jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.add_look_comment(uuid, jsonb) TO authenticated;
 
--- 8. Trigger automático para crear `public.profiles` al registrar un usuario en Auth
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_base text;
-  v_username text;
-BEGIN
-  v_base := COALESCE(
-    NULLIF(regexp_replace(COALESCE(NEW.raw_user_meta_data->>'username', ''), '[^a-zA-Z0-9_]', '_', 'g'), ''),
-    NULLIF(regexp_replace(split_part(COALESCE(NEW.email, ''), '@', 1), '[^a-zA-Z0-9_]', '_', 'g'), ''),
-    'usuario'
-  );
-  v_username := lower(v_base) || '_' || left(NEW.id::text, 4);
-
-  INSERT INTO public.profiles (id, username, accessibility_prefs)
-  VALUES (
-    NEW.id,
-    v_username,
-    jsonb_build_object(
-      'theme_mode', 'system',
-      'high_contrast', false,
-      'dyslexia_font', false,
-      'font_family_variant', 'default',
-      'font_scale', 1.0,
-      'reduced_motion', false,
-      'assistive_voice_bar', false
-    )
-  )
-  ON CONFLICT (id) DO NOTHING;
-
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_new_user();
+-- 6. Recargar la caché de esquema de PostgREST de inmediato
+NOTIFY pgrst, 'reload schema';

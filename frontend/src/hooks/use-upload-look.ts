@@ -17,6 +17,7 @@ import { useAnalysisLock } from '@/contexts/analysis-lock-context';
 import {
   BACKEND_URL,
   isSupabaseConfigured,
+  notifyLookDataChanged,
   requestLookAppeal,
   resolveLookImageUrl,
   saveUserCreatedLook,
@@ -707,6 +708,8 @@ export function useUploadLook(): UseUploadLookResult {
         if (appealStatus !== 'none') {
           await requestLookAppeal(analysisResult.look_id);
         }
+
+        notifyLookDataChanged({ type: 'created', lookId: analysisResult.look_id });
       }
 
       // Clean draft from AsyncStorage
@@ -739,7 +742,9 @@ export function useUploadLook(): UseUploadLookResult {
     announceStatus('Enviando solicitud de apelación humana...');
 
     try {
-      await requestLookAppeal(analysisResult.look_id);
+      if (!analysisResult.is_simulated) {
+        await requestLookAppeal(analysisResult.look_id);
+      }
       setAppealStatus('pending');
       await saveDraftLocally(imageUri, imageMimeType, analysisResult, altText, 'pending');
 

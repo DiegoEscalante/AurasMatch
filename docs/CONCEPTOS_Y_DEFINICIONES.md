@@ -1,6 +1,6 @@
 # Glosario Maestro de Conceptos y Definiciones Técnicas — AurasMatch
 
-> **Propósito de este documento:** Explicar de lo **general a lo específico** todos los conceptos arquitectónicos, móviles, de accesibilidad y de visión por computadora utilizados en **AurasMatch**, conectándolos con la base vista en [`docs/projectProposalDocs/agente-desarrollo-movil.md`](./projectProposalDocs/agente-desarrollo-movil.md) y con las 3 reglas del proyecto ([`Course Project Phase 3`](./projectProposalDocs/Course%20Project%20Phase%203%20-%20Entrega%20Final%20(Proyecto%20Final%20Desarrollo%20Móvil).md), [`Project Proposal.pdf`](./projectProposalDocs/Project%20Proposal.pdf) y [`2ndPhaseProposal.pdf`](./projectProposalDocs/2ndPhaseProposal.pdf)).
+> **Propósito de este documento:** Explicar de lo **general a lo específico** todos los conceptos arquitectónicos, móviles, de accesibilidad y de visión por computadora utilizados en **AurasMatch**, conectándolos con la base vista en [`projectProposalDocs/agente-desarrollo-movil.md`](../projectProposalDocs/agente-desarrollo-movil.md) y con las 3 reglas del proyecto ([`Course Project Phase 3`](../projectProposalDocs/Course%20Project%20Phase%203%20-%20Entrega%20Final%20%28Proyecto%20Final%20Desarrollo%20Móvil%29.md), [`Project Proposal.pdf`](../projectProposalDocs/Project%20Proposal.pdf) y [`2ndPhaseProposal.pdf`](../projectProposalDocs/2ndPhaseProposal.pdf)).
 
 ---
 
@@ -277,6 +277,26 @@ $$\text{Ratio de Contraste} = \frac{L_{\text{más claro}} + 0.05}{L_{\text{más 
   * Al encenderse, despliega un botón flotante accesible ($\ge 48 \times 48\text{ dp}$, con iconos $\text{🎙️ } \♿$) anclado en la esquina inferior.
   * Al pulsarlo, abre una paleta de atajos asistidos que ejecutan directamente las acciones de navegación y simulan las órdenes de voz (*"Ir al Feed"*, *"Subir Look"*, *"Mi Perfil"*, *"Escuchar Pantalla"*, *"Dar me gusta"*, *"Guardar"*), emitiendo vibración háptica y anuncios por voz mediante síntesis accesible (`announceStatus`).
   * Incluye una guía didáctica desplegable que explica detalladamente la equivalencia exacta de las frases para iOS *Voice Control* y Android *Voice Access*.
+
+---
+
+## Nivel 12: Seguridad RLS, Sincronización Reactiva y Entregables de Ingeniería (Fase 09)
+
+### 39. Políticas RLS Granulares, Triggers Protectores y RPCs `SECURITY DEFINER` (PostgreSQL / Supabase)
+* **Concepto:** En arquitecturas BaaS donde la aplicación móvil usa únicamente la clave pública `anon` + token JWT del usuario autenticado (`authenticated`), la seguridad reside en el motor **Row-Level Security (RLS)** de PostgreSQL y no en ocultar credenciales privadas en el cliente.
+* **Aplicación en AurasMatch ([`supabase-rls-and-rpcs.sql`](./supabase-rls-and-rpcs.sql)):**
+  * Para permitir que un autor edite su *Alt-Text* (`description`) o solicite revisión (`appeal_status = 'pending'`) sin poder falsificar la verificación humana, el trigger `protect_look_verification_columns` bloquea cualquier alteración de `user_id`, `is_human_verified` o `ai_confidence_score` proveniente de sesiones `anon`/`authenticated`.
+  * Dado que dar *Me gusta* o comentar sobre publicaciones de terceros exige mutar una publicación ajena (`liked_by`, `comments`), PostgreSQL encapsula esas mutaciones en funciones **RPC `SECURITY DEFINER`** (`toggle_look_like(p_look_id)` y `add_look_comment(p_look_id, p_comment)`) con bloqueo de fila (`FOR UPDATE`), validación de longitud server-side y lectura obligatoria de `auth.uid()`.
+
+### 40. Bus Reactivo de Eventos *Cross-Screen* (`subscribeLookDataChanges`)
+* **Problema resuelto:** Al migrar la barra inferior a `<Slot />` en [`app-tabs.tsx`](../frontend/src/components/app-tabs.tsx), cada cambio de pestaña desmonta/remonta la ruta activa, y la versión de `expo-router` utilizada (`~58.0.28`) no expone `useFocusEffect` para rehidratar automáticamente al regresar.
+* **Implementación en [`supabase.ts`](../frontend/src/services/supabase.ts):**
+  * Un emisor ligero en memoria publica eventos tipados (`like`, `save`, `comment`, `description`, `appeal`, `created`) cuando culmina una operación persistente.
+  * Los hooks `useFeed`, `useLookDetail` y `useUserProfile` se suscriben al bus y sincronizan sus estados locales al instante, manteniendo consistencia visual sin saturar la red ni recargar catálogos completos.
+
+### 41. Matriz Trazable Corte 2 $\rightarrow$ Corte 3 y Rigor de Entrega ([`Entrega_Final_AurasMatch.md`](./Entrega_Final_AurasMatch.md))
+* **Trazabilidad documental:** Una entrega de ingeniería madura no declara cumplimiento genérico de accesibilidad; vincula explícitamente **cada una de las 16 promesas** comprometidas en la propuesta previa ([`2ndPhaseProposal.pdf`](../projectProposalDocs/2ndPhaseProposal.pdf)) con criterios WCAG 2.1/2.2, componentes concretos y rangos de líneas verificados en el código fuente.
+* **Separación entre verificación ejecutada y auditoría manual:** [`Entrega_Final_AurasMatch.md`](./Entrega_Final_AurasMatch.md) distingue estrictamente las pruebas ejecutadas y observadas (compilación `npx tsc --noEmit`, auditoría de secretos, pruebas CRUD en vivo contra Supabase) del protocolo paso a paso para validación en vivo con *TalkBack*, *VoiceOver* y navegación por teclado durante la sustentación final.
 
 
 
