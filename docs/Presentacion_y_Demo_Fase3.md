@@ -81,3 +81,4 @@ Si el profesor solicita ubicar código línea por línea en el editor, usar esta
 * **Guardas Web ARIA vs. roles nativos (`RCTView`):** [`frontend/src/components/ui/accessible-modal.tsx`](../frontend/src/components/ui/accessible-modal.tsx) y [`frontend/src/components/ui/visual-alert-banner.tsx`](../frontend/src/components/ui/visual-alert-banner.tsx).
 * **RLS, Trigger protector y RPCs `SECURITY DEFINER`:** [`docs/supabase-rls-and-rpcs.sql`](supabase-rls-and-rpcs.sql).
 * **Pipeline Backend FastAPI / MediaPipe / CIELAB / Anti-IA:** [`backend/app/main.py`](../backend/app/main.py), [`backend/app/cv/mediapipe_cv.py`](../backend/app/cv/mediapipe_cv.py), [`backend/app/cv/color_math.py`](../backend/app/cv/color_math.py), [`backend/app/cv/anti_ai.py`](../backend/app/cv/anti_ai.py) y [`backend/app/cv/vision_api.py`](../backend/app/cv/vision_api.py).
+
