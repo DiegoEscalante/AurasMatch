@@ -130,3 +130,24 @@ export interface SavedLookRow {
   created_at: string;
 }
 
+/**
+ * Umbral máximo de probabilidad sintética (`ai_confidence_score`) permitido antes de
+ * rechazar una imagen como IA (`backend/app/cv/anti_ai.py`: `ai_threshold = 0.50`).
+ */
+export const ANTI_AI_REJECTION_THRESHOLD = 0.5;
+
+/**
+ * Valida si un look aprueba el filtro Anti-IA usando tanto la bandera booleana del servidor
+ * como la regla numérica estricta `ai_confidence_score < 0.50`.
+ */
+export function isLookHumanApproved(
+  isHumanVerified?: boolean | null,
+  aiConfidenceScore?: number | null
+): boolean {
+  if (!isHumanVerified) return false;
+  if (aiConfidenceScore === null || aiConfidenceScore === undefined) return true;
+  const numericScore = Number(aiConfidenceScore);
+  if (!Number.isFinite(numericScore)) return false;
+  return numericScore >= 0 && numericScore < ANTI_AI_REJECTION_THRESHOLD;
+}
+

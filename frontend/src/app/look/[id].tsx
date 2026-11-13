@@ -41,6 +41,7 @@ import {
   FACIAL_REGIONS,
   FACIAL_REGION_LABELS,
   FacialRegionKey,
+  isLookHumanApproved,
   LookRow,
   ProductRow,
 } from '@/types/database';
@@ -171,6 +172,11 @@ export default function LookDetailScreen() {
 
   const subcultures = look.subculture || [];
   const regions = look.extracted_regions || {};
+  const isHumanVerified = isLookHumanApproved(
+    look.is_human_verified,
+    look.ai_confidence_score
+  );
+  const aiScorePercent = Math.round((look.ai_confidence_score ?? 0) * 100);
   const humanScorePercent = Math.max(
     1,
     Math.min(99, Math.round((1 - (look.ai_confidence_score ?? 0)) * 100))
@@ -385,24 +391,45 @@ export default function LookDetailScreen() {
               <AccessiblePressable
                 onPress={() => setShowAntiAiModal(true)}
                 accessibilityRole="button"
-                accessibilityLabel={`Verificado ${humanScorePercent}% humano. Toca para ver reporte de autenticidad anti-IA.`}
+                accessibilityLabel={
+                  isHumanVerified
+                    ? `Verificado ${humanScorePercent}% humano. Toca para ver reporte de autenticidad anti-IA.`
+                    : `Retenido por filtro Anti-IA (${aiScorePercent}% riesgo IA). Toca para ver reporte forense.`
+                }
                 accessibilityHint="Abre una ventana con el análisis forense de la imagen"
                 style={[
                   styles.antiAiButton,
                   {
-                    backgroundColor: high_contrast ? '#000000' : '#DCFCE7',
-                    borderColor: high_contrast ? '#FFFFFF' : '#86EFAC',
+                    backgroundColor: high_contrast
+                      ? '#000000'
+                      : isHumanVerified
+                      ? '#DCFCE7'
+                      : '#FEF3C7',
+                    borderColor: high_contrast
+                      ? '#FFFFFF'
+                      : isHumanVerified
+                      ? '#86EFAC'
+                      : '#F59E0B',
                   },
                 ]}
               >
-                <ThemedText style={styles.antiAiButtonIcon}>🛡️</ThemedText>
+                <ThemedText style={styles.antiAiButtonIcon}>
+                  {isHumanVerified ? '🛡️' : '⚠️'}
+                </ThemedText>
                 <ThemedText
                   style={[
                     styles.antiAiButtonText,
-                    { color: high_contrast ? '#FFFFFF' : '#166534', fontWeight: 'bold' },
+                    {
+                      color: high_contrast
+                        ? '#FFFFFF'
+                        : isHumanVerified
+                        ? '#166534'
+                        : '#92400E',
+                      fontWeight: 'bold',
+                    },
                   ]}
                 >
-                  {humanScorePercent}% Humano
+                  {isHumanVerified ? `${humanScorePercent}% Humano` : `${aiScorePercent}% IA`}
                 </ThemedText>
               </AccessiblePressable>
             </View>
@@ -634,6 +661,7 @@ export default function LookDetailScreen() {
       <AntiAiTransparencyModal
         visible={showAntiAiModal}
         onClose={() => setShowAntiAiModal(false)}
+        isHumanVerified={isHumanVerified}
         aiConfidenceScore={look.ai_confidence_score}
         authorUsername={look.author_username}
         subcultureConfidenceScore={look.subculture_confidence_score}

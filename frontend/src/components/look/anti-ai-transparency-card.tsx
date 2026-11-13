@@ -14,10 +14,12 @@ import { AccessiblePressable } from '@/components/ui/accessible-pressable';
 import { MinTouchTargetSize, Spacing } from '@/constants/theme';
 import { useAccessibility } from '@/hooks/use-accessibility';
 import { useTheme } from '@/hooks/use-theme';
+import { ANTI_AI_REJECTION_THRESHOLD, isLookHumanApproved } from '@/types/database';
 
 export interface AntiAiTransparencyModalProps {
   visible: boolean;
   onClose: () => void;
+  isHumanVerified?: boolean | null;
   aiConfidenceScore?: number | null;
   authorUsername?: string | null;
   subcultureConfidenceScore?: number | null;
@@ -26,6 +28,7 @@ export interface AntiAiTransparencyModalProps {
 export function AntiAiTransparencyModal({
   visible,
   onClose,
+  isHumanVerified,
   aiConfidenceScore,
   authorUsername,
   subcultureConfidenceScore,
@@ -40,6 +43,11 @@ export function AntiAiTransparencyModal({
       ? aiConfidenceScore
       : 0.05;
 
+  const isHuman = isLookHumanApproved(
+    isHumanVerified ?? safeAiScore < ANTI_AI_REJECTION_THRESHOLD,
+    safeAiScore
+  );
+  const aiScorePercent = Math.round(safeAiScore * 100);
   const humanScorePercent = Math.max(
     1,
     Math.min(99, Math.round((1 - safeAiScore) * 100))
@@ -122,8 +130,16 @@ export function AntiAiTransparencyModal({
               style={[
                 styles.summaryBanner,
                 {
-                  backgroundColor: high_contrast ? '#000000' : '#DCFCE7',
-                  borderColor: high_contrast ? '#FFFFFF' : '#86EFAC',
+                  backgroundColor: high_contrast
+                    ? '#000000'
+                    : isHuman
+                    ? '#DCFCE7'
+                    : '#FEF3C7',
+                  borderColor: high_contrast
+                    ? '#FFFFFF'
+                    : isHuman
+                    ? '#86EFAC'
+                    : '#F59E0B',
                 },
               ]}
             >
@@ -131,15 +147,29 @@ export function AntiAiTransparencyModal({
                 <ThemedText
                   style={[
                     styles.guaranteeTitle,
-                    { color: high_contrast ? '#FFFFFF' : '#15803D' },
+                    {
+                      color: high_contrast
+                        ? '#FFFFFF'
+                        : isHuman
+                        ? '#15803D'
+                        : '#92400E',
+                    },
                   ]}
                 >
-                  {humanScorePercent}% Verificado Humano
+                  {isHuman
+                    ? `${humanScorePercent}% Verificado Humano`
+                    : 'Retenido por Filtro Anti-IA'}
                 </ThemedText>
                 <ThemedText
                   style={[
                     styles.authorSubtitle,
-                    { color: high_contrast ? '#E2E8F0' : '#166534' },
+                    {
+                      color: high_contrast
+                        ? '#E2E8F0'
+                        : isHuman
+                        ? '#166534'
+                        : '#78350F',
+                    },
                   ]}
                 >
                   Publicado por @{authorUsername || 'auras'}
@@ -150,25 +180,42 @@ export function AntiAiTransparencyModal({
                 style={[
                   styles.statusPill,
                   {
-                    backgroundColor: high_contrast ? '#000000' : '#BBF7D0',
-                    borderColor: high_contrast ? '#FFFFFF' : '#4ADE80',
+                    backgroundColor: high_contrast
+                      ? '#000000'
+                      : isHuman
+                      ? '#BBF7D0'
+                      : '#FDE68A',
+                    borderColor: high_contrast
+                      ? '#FFFFFF'
+                      : isHuman
+                      ? '#4ADE80'
+                      : '#D97706',
                   },
                 ]}
               >
                 <ThemedText
                   style={[
                     styles.statusText,
-                    { color: high_contrast ? '#FFFFFF' : '#14532D' },
+                    {
+                      color: high_contrast
+                        ? '#FFFFFF'
+                        : isHuman
+                        ? '#14532D'
+                        : '#78350F',
+                    },
                   ]}
                 >
-                  ✓ 0% Generado por IA
+                  {isHuman
+                    ? `✓ ${aiScorePercent}% Riesgo IA (< 50%)`
+                    : `⚠️ ${aiScorePercent}% Riesgo IA`}
                 </ThemedText>
               </View>
             </View>
 
             <ThemedText style={[styles.introText, { color: theme.text }]}>
-              Cada fotografía pasa por un pipeline estricto de 4 etapas en Google Cloud Run antes de ser
-              publicada en el feed para garantizar que ningún rostro o cosmético sea generado por IA:
+              {isHuman
+                ? 'Cada fotografía pasa por un pipeline estricto de 4 etapas en Google Cloud Run antes de ser publicada en el feed para garantizar que ningún rostro o cosmético sea generado por IA:'
+                : 'Esta imagen alcanzó o superó el umbral de probabilidad sintética (>= 50%) en Google Cloud Run, por lo que permanece excluida del Feed comunitario salvo apelación humana aprobada:'}
             </ThemedText>
 
             {/* Pipeline Stages Breakdown */}

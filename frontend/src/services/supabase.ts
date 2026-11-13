@@ -5,6 +5,7 @@ import { Platform } from 'react-native';
 import { AccessibilityPrefs } from '@/contexts/accessibility-context';
 import {
   AppealStatus,
+  isLookHumanApproved,
   LookCommentItem,
   LookRow,
   ProductRow,
@@ -224,13 +225,16 @@ export function hydrateLookRowFromDb(
     (typeof raw.author_username === 'string' && raw.author_username.trim()) ||
     defaultAuthor;
 
+  const aiScore = Number(raw.ai_confidence_score ?? 0);
+  const resolvedHuman = isLookHumanApproved(Boolean(raw.is_human_verified), aiScore);
+
   return {
     id,
     user_id: userId,
     author_username: resolvedAuthor,
     image_path: String(raw.image_path || ''),
-    is_human_verified: Boolean(raw.is_human_verified),
-    ai_confidence_score: Number(raw.ai_confidence_score ?? 0),
+    is_human_verified: resolvedHuman,
+    ai_confidence_score: aiScore,
     subculture: subcultureList,
     subculture_confidence_score:
       raw.subculture_confidence_score !== null && raw.subculture_confidence_score !== undefined
@@ -912,14 +916,16 @@ export async function fetchSimilarLooks(
         const authorIds = selected.map((s) => String(s.user_id || '')).filter(Boolean);
         const profileMap = await fetchProfileUsernamesMap(authorIds);
 
-        return selected.map((item) =>
-          hydrateLookRowFromDb(item, {
-            currentUserId,
-            savedLookIds: savedSet,
-            authorUsernames: profileMap,
-            defaultAuthor: 'usuario_auras',
-          })
-        );
+        return selected
+          .map((item) =>
+            hydrateLookRowFromDb(item, {
+              currentUserId,
+              savedLookIds: savedSet,
+              authorUsernames: profileMap,
+              defaultAuthor: 'usuario_auras',
+            })
+          )
+          .filter((item) => isLookHumanApproved(item.is_human_verified, item.ai_confidence_score));
       }
     } catch {
       // Fallback below

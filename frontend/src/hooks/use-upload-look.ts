@@ -27,9 +27,11 @@ import {
 import { uploadImageToR2 } from '@/services/r2-storage';
 import {
   AestheticSubculture,
+  ANTI_AI_REJECTION_THRESHOLD,
   AppealStatus,
   ExtractedRegionsMap,
   FacialRegionKey,
+  isLookHumanApproved,
   LookRow,
 } from '@/types/database';
 import {
@@ -81,6 +83,7 @@ export interface UseUploadLookResult {
   isNoFaceDetected: boolean;
   isNetworkError: boolean;
   isSimulated: boolean;
+  isAnalysisApproved: boolean;
   isAnalyzing: boolean;
   appealStatus: AppealStatus;
   isAppealing: boolean;
@@ -208,21 +211,34 @@ export function useUploadLook(): UseUploadLookResult {
 
         const draft: UploadDraft = JSON.parse(rawDraft);
         if (isMounted && draft.imageUri) {
+          const normalizedDraftAnalysis = draft.analysisResult
+            ? {
+                ...draft.analysisResult,
+                is_human_verified: isLookHumanApproved(
+                  draft.analysisResult.is_human_verified,
+                  draft.analysisResult.ai_confidence_score
+                ),
+              }
+            : null;
+
           setImageUri(draft.imageUri);
           setImageMimeType(draft.imageMimeType || 'image/jpeg');
-          setAnalysisResult(draft.analysisResult);
+          setAnalysisResult(normalizedDraftAnalysis);
           setAltTextState(draft.altText || '');
           setAppealStatus(draft.appealStatus || 'none');
           setDraftSavedAt(draft.savedAt || null);
           setHasDraft(true);
 
-          if (draft.analysisResult) {
-            const sub = draft.analysisResult.choice || draft.analysisResult.subculture?.[0] || 'Clean Girl';
+          if (normalizedDraftAnalysis) {
+            const sub =
+              normalizedDraftAnalysis.choice ||
+              normalizedDraftAnalysis.subculture?.[0] ||
+              'Clean Girl';
             setSuggestedAltText(
               generateSuggestedAltText(
                 sub,
-                draft.analysisResult.extracted_regions,
-                draft.analysisResult.is_human_verified
+                normalizedDraftAnalysis.extracted_regions,
+                normalizedDraftAnalysis.is_human_verified
               )
             );
             setStatus('analyzed');
@@ -510,7 +526,15 @@ export function useUploadLook(): UseUploadLookResult {
         throw new Error(`Servidor Cloud Run respondió código ${response.status}: ${errorText}`);
       }
 
-      const data: LookAnalysisData = await response.json();
+      const rawData: LookAnalysisData = await response.json();
+      const approvedAsHuman = isLookHumanApproved(
+        rawData.is_human_verified,
+        rawData.ai_confidence_score
+      );
+      const data: LookAnalysisData = {
+        ...rawData,
+        is_human_verified: approvedAsHuman,
+      };
       setAnalysisResult(data);
       setStatus('analyzed');
 
@@ -518,7 +542,7 @@ export function useUploadLook(): UseUploadLookResult {
       const suggested = generateSuggestedAltText(
         subcultureName,
         data.extracted_regions,
-        data.is_human_verified
+        approvedAsHuman
       );
       setSuggestedAltText(suggested);
       setAltTextState(suggested);
@@ -531,12 +555,18 @@ export function useUploadLook(): UseUploadLookResult {
         'none'
       );
 
-      triggerHapticFeedback('success');
-      announceStatus(
-        `Análisis completado. Subcultura clasificada: ${subcultureName}. Estado Anti-IA: ${
-          data.is_human_verified ? 'Verificado como humano' : 'Sospecha sintética'
-        }.`
-      );
+      if (approvedAsHuman) {
+        triggerHapticFeedback('success');
+        announceStatus(
+          `Análisis completado. Subcultura clasificada: ${subcultureName}. Verificado como origen humano.`
+        );
+      } else {
+        const aiPct = Math.round((data.ai_confidence_score ?? 0) * 100);
+        triggerHapticFeedback('warning');
+        announceStatus(
+          `Imagen clasificada como posible generación sintética por IA (${aiPct}%). Publicación bloqueada en el Feed; puedes solicitar apelación humana o subir otra fotografía.`
+        );
+      }
     } catch (err: any) {
       setIsNetworkError(true);
       setStatus('error');
@@ -644,6 +674,15 @@ export function useUploadLook(): UseUploadLookResult {
   // Publish Look: Confirms publication in Supabase and clears draft
   const publishLook = useCallback(async () => {
     if (!analysisResult) return;
+
+    if (!isLookHumanApproved(analysisResult.is_human_verified, analysisResult.ai_confidence_score)) {
+      const scorePct = Math.round((analysisResult.ai_confidence_score ?? 0) * 100);
+      const rejectedMsg = `Publicación rechazada por el filtro Anti-IA (confianza sintética: ${scorePct}%, límite permitido: < ${Math.round(ANTI_AI_REJECTION_THRESHOLD * 100)}%). No puede publicarse en el Feed comunitario; solicita apelación humana o prueba con otra fotografía real.`;
+      setErrorMessage(rejectedMsg);
+      triggerHapticFeedback('warning');
+      announceStatus(rejectedMsg);
+      return;
+    }
 
     setStatus('publishing');
     setErrorMessage(null);
@@ -761,6 +800,10 @@ export function useUploadLook(): UseUploadLookResult {
   }, [analysisResult, imageUri, imageMimeType, altText, saveDraftLocally]);
 
   const isSimulated = Boolean(analysisResult?.is_simulated);
+  const isAnalysisApproved = Boolean(
+    analysisResult &&
+      isLookHumanApproved(analysisResult.is_human_verified, analysisResult.ai_confidence_score)
+  );
 
   return {
     status,
@@ -772,6 +815,7 @@ export function useUploadLook(): UseUploadLookResult {
     isNoFaceDetected,
     isNetworkError,
     isSimulated,
+    isAnalysisApproved,
     isAnalyzing,
     appealStatus,
     isAppealing,

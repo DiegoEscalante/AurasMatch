@@ -22,6 +22,7 @@ import {
 import {
   AestheticSubculture,
   FacialRegionKey,
+  isLookHumanApproved,
   LookRow,
 } from '@/types/database';
 import { announceStatus, triggerHapticFeedback } from '@/utils/a11y-feedback';
@@ -160,14 +161,16 @@ export function useFeed(): UseFeedFilterReturn {
         if (!error && data && data.length > 0) {
           const authorIds = data.map((item) => String(item.user_id || '')).filter(Boolean);
           const authorUsernames = await fetchProfileUsernamesMap(authorIds);
-          fetchedList = data.map((item) =>
-            hydrateLookRowFromDb(item, {
-              currentUserId,
-              savedLookIds: savedSet,
-              authorUsernames,
-              defaultAuthor: 'usuario_auras',
-            })
-          );
+          fetchedList = data
+            .map((item) =>
+              hydrateLookRowFromDb(item, {
+                currentUserId,
+                savedLookIds: savedSet,
+                authorUsernames,
+                defaultAuthor: 'usuario_auras',
+              })
+            )
+            .filter((item) => isLookHumanApproved(item.is_human_verified, item.ai_confidence_score));
         }
       }
 

@@ -12,6 +12,7 @@ import {
   AppealStatus,
   FACIAL_REGION_LABELS,
   FacialRegionKey,
+  isLookHumanApproved,
 } from '@/types/database';
 import { formatAccessibleColorLabel, getSpanishColorName } from '@/utils/color-names';
 
@@ -42,7 +43,7 @@ export function AIAnalysisResultsCard({
   const subcultureConfidence = Math.round((data.subculture_confidence_score || 0.9) * 100);
   const aiScorePct = Math.round((data.ai_confidence_score || 0) * 100);
 
-  const isHuman = data.is_human_verified;
+  const isHuman = isLookHumanApproved(data.is_human_verified, data.ai_confidence_score);
 
   return (
     <ThemedView

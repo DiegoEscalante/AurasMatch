@@ -51,6 +51,7 @@ export default function UploadLookScreen() {
     errorMessage,
     isNoFaceDetected,
     isNetworkError,
+    isAnalysisApproved,
     isAnalyzing,
     appealStatus,
     isAppealing,
@@ -389,168 +390,185 @@ export default function UploadLookScreen() {
                   onSubmitAppeal={submitAppeal}
                 />
 
-                {/* Step 3: Editable AI Alt-Text Editor (2ndPhaseProposal.pdf Section V.D) */}
-                <View
-                  style={[
-                    styles.altTextCard,
-                    {
-                      backgroundColor: theme.backgroundElement,
-                      borderColor: theme.border,
-                    },
-                  ]}>
-                  <View style={styles.altTextHeader}>
-                    <ThemedText type="default" style={{ fontWeight: '700' }}>
-                      Texto Descriptivo (Alt-Text) para Accesibilidad
-                    </ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      Descripción generada por la IA para usuarios con lectores de pantalla
-                      (TalkBack, VoiceOver o NVDA). Puedes revisarla o editarla libremente:
-                    </ThemedText>
-                  </View>
-
-                  <TextInput
-                    style={[
-                      styles.altTextInput,
-                      {
-                        backgroundColor: theme.background,
-                        borderColor: theme.border,
-                        color: theme.text,
-                      },
-                    ]}
-                    multiline={true}
-                    numberOfLines={4}
-                    value={altText}
-                    onChangeText={setAltText}
-                    placeholder="Escribe o ajusta la descripción accesible de tu maquillaje..."
-                    placeholderTextColor={theme.textSecondary}
-                    accessible={true}
-                    accessibilityLabel="Texto alternativo descriptivo del look para lectores de pantalla"
-                    accessibilityHint="Edita la descripción que escucharán los usuarios con discapacidad visual"
-                  />
-
-                  <View style={styles.altTextFooter}>
-                    <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
-                      {altText.length} caracteres
-                    </ThemedText>
-
-                    <View style={styles.altTextActionsRow}>
-                      {altText.length > 0 && (
-                        <AccessiblePressable
-                          accessibilityLabel="Borrar todo el texto descriptivo"
-                          accessibilityHint="Elimina todo el contenido del campo de texto para comenzar a escribir desde cero"
-                          onPress={() => {
-                            setAltText('');
-                            void triggerHapticFeedback('light');
-                            announceStatus('Texto descriptivo borrado');
-                          }}
-                          style={styles.textActionButton}>
-                          <ThemedText
-                            type="small"
-                            style={{ color: '#EF4444', fontSize: 12, fontWeight: '600' }}>
-                            🗑️ Borrar todo
-                          </ThemedText>
-                        </AccessiblePressable>
-                      )}
-
-                      {altText !== suggestedAltText && (
-                        <AccessiblePressable
-                          accessibilityLabel="Restaurar descripción sugerida por IA"
-                          accessibilityHint="Sobrescribe el texto actual con la sugerencia original calculada por la inteligencia artificial"
-                          onPress={restoreSuggestedAltText}
-                          style={styles.textActionButton}>
-                          <ThemedText
-                            type="small"
-                            style={{ color: theme.primary, fontSize: 12, fontWeight: '600' }}>
-                            ↺ Restaurar sugerencia de IA
-                          </ThemedText>
-                        </AccessiblePressable>
-                      )}
-                    </View>
-                  </View>
-                </View>
-
-                {/* Step 4: Publish Action or Success Feedback */}
-                {!isPublished ? (
-                  <View style={styles.publishBlock}>
-                    {status === 'analyzed' && errorMessage ? (
-                      <VisualAlertBanner
-                        variant="error"
-                        title="Error al publicar"
-                        message={errorMessage}
-                        style={{ marginBottom: 12 }}
-                      />
-                    ) : null}
-                    <AccessiblePressable
-                      accessibilityLabel="Publicar look de maquillaje en la comunidad"
-                      accessibilityHint="Guarda tu publicación en Supabase con su descripción y colores extraídos para que aparezca en el Feed"
-                      disabled={status === 'publishing'}
-                      onPress={publishLook}
+                {/* Step 3 & 4: Solo permitir edición final y publicación pública si aprobó el filtro Anti-IA */}
+                {isAnalysisApproved ? (
+                  <>
+                    {/* Step 3: Editable AI Alt-Text Editor (2ndPhaseProposal.pdf Section V.D) */}
+                    <View
                       style={[
-                        styles.publishButton,
-                        { backgroundColor: theme.primary },
+                        styles.altTextCard,
+                        {
+                          backgroundColor: theme.backgroundElement,
+                          borderColor: theme.border,
+                        },
                       ]}>
-                      {status === 'publishing' ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                      ) : (
-                        <ThemedText
-                          type="default"
-                          style={{ color: '#FFFFFF', fontWeight: '700' }}>
-                          🚀 Publicar Look en la Comunidad
+                      <View style={styles.altTextHeader}>
+                        <ThemedText type="default" style={{ fontWeight: '700' }}>
+                          Texto Descriptivo (Alt-Text) para Accesibilidad
                         </ThemedText>
-                      )}
-                    </AccessiblePressable>
+                        <ThemedText type="small" themeColor="textSecondary">
+                          Descripción generada por la IA para usuarios con lectores de pantalla
+                          (TalkBack, VoiceOver o NVDA). Puedes revisarla o editarla libremente:
+                        </ThemedText>
+                      </View>
 
-                    <ThemedText
-                      type="small"
-                      themeColor="textSecondary"
-                      style={{ fontSize: 12, textAlign: 'center' }}>
-                      Al publicar, tu look se integrará al catálogo con su paleta de tonos CIELAB y
-                      los productos afines recomendados.
-                    </ThemedText>
-                  </View>
-                ) : (
-                  <View style={styles.successBlock}>
-                    <VisualAlertBanner
-                      variant="success"
-                      title="¡Look Publicado con Éxito!"
-                      message="Tu maquillaje ya forma parte de AurasMatch con su clasificación estética, paleta exacta y descripción accesible."
-                    />
-
-                    <View style={styles.successActionsRow}>
-                      {publishedLookId && (
-                        <AccessiblePressable
-                          accessibilityLabel="Ver detalle de la publicación recién subida"
-                          accessibilityHint="Navega a la pantalla completa de detalle estilo Pinterest de este look"
-                          onPress={() => router.push(`/look/${publishedLookId}` as any)}
-                          style={[
-                            styles.successButton,
-                            { backgroundColor: theme.primary },
-                          ]}>
-                          <ThemedText
-                            type="small"
-                            style={{ color: '#FFFFFF', fontWeight: '700' }}>
-                            🔍 Ver Publicación en Detalle
-                          </ThemedText>
-                        </AccessiblePressable>
-                      )}
-
-                      <AccessiblePressable
-                        accessibilityLabel="Subir otro maquillaje"
-                        accessibilityHint="Limpia la pantalla para comenzar a analizar una nueva foto"
-                        onPress={discardDraft}
+                      <TextInput
                         style={[
-                          styles.successButton,
+                          styles.altTextInput,
                           {
                             backgroundColor: theme.background,
                             borderColor: theme.border,
-                            borderWidth: 1,
+                            color: theme.text,
                           },
-                        ]}>
-                        <ThemedText type="small" style={{ fontWeight: '700' }}>
-                          ➕ Subir Otro Look
+                        ]}
+                        multiline={true}
+                        numberOfLines={4}
+                        value={altText}
+                        onChangeText={setAltText}
+                        placeholder="Escribe o ajusta la descripción accesible de tu maquillaje..."
+                        placeholderTextColor={theme.textSecondary}
+                        accessible={true}
+                        accessibilityLabel="Texto alternativo descriptivo del look para lectores de pantalla"
+                        accessibilityHint="Edita la descripción que escucharán los usuarios con discapacidad visual"
+                      />
+
+                      <View style={styles.altTextFooter}>
+                        <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
+                          {altText.length} caracteres
                         </ThemedText>
-                      </AccessiblePressable>
+
+                        <View style={styles.altTextActionsRow}>
+                          {altText.length > 0 && (
+                            <AccessiblePressable
+                              accessibilityLabel="Borrar todo el texto descriptivo"
+                              accessibilityHint="Elimina todo el contenido del campo de texto para comenzar a escribir desde cero"
+                              onPress={() => {
+                                setAltText('');
+                                void triggerHapticFeedback('light');
+                                announceStatus('Texto descriptivo borrado');
+                              }}
+                              style={styles.textActionButton}>
+                              <ThemedText
+                                type="small"
+                                style={{ color: '#EF4444', fontSize: 12, fontWeight: '600' }}>
+                                🗑️ Borrar todo
+                              </ThemedText>
+                            </AccessiblePressable>
+                          )}
+
+                          {altText !== suggestedAltText && (
+                            <AccessiblePressable
+                              accessibilityLabel="Restaurar descripción sugerida por IA"
+                              accessibilityHint="Sobrescribe el texto actual con la sugerencia original calculada por la inteligencia artificial"
+                              onPress={restoreSuggestedAltText}
+                              style={styles.textActionButton}>
+                              <ThemedText
+                                type="small"
+                                style={{ color: theme.primary, fontSize: 12, fontWeight: '600' }}>
+                                ↺ Restaurar sugerencia de IA
+                              </ThemedText>
+                            </AccessiblePressable>
+                          )}
+                        </View>
+                      </View>
                     </View>
+
+                    {/* Step 4: Publish Action or Success Feedback */}
+                    {!isPublished ? (
+                      <View style={styles.publishBlock}>
+                        {status === 'analyzed' && errorMessage ? (
+                          <VisualAlertBanner
+                            variant="error"
+                            title="Error al publicar"
+                            message={errorMessage}
+                            style={{ marginBottom: 12 }}
+                          />
+                        ) : null}
+                        <AccessiblePressable
+                          accessibilityLabel="Publicar look de maquillaje en la comunidad"
+                          accessibilityHint="Guarda tu publicación en Supabase con su descripción y colores extraídos para que aparezca en el Feed"
+                          disabled={status === 'publishing'}
+                          onPress={publishLook}
+                          style={[
+                            styles.publishButton,
+                            { backgroundColor: theme.primary },
+                          ]}>
+                          {status === 'publishing' ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                          ) : (
+                            <ThemedText
+                              type="default"
+                              style={{ color: '#FFFFFF', fontWeight: '700' }}>
+                              🚀 Publicar Look en la Comunidad
+                            </ThemedText>
+                          )}
+                        </AccessiblePressable>
+
+                        <ThemedText
+                          type="small"
+                          themeColor="textSecondary"
+                          style={{ fontSize: 12, textAlign: 'center' }}>
+                          Al publicar, tu look se integrará al catálogo con su paleta de tonos CIELAB y
+                          los productos afines recomendados.
+                        </ThemedText>
+                      </View>
+                    ) : (
+                      <View style={styles.successBlock}>
+                        <VisualAlertBanner
+                          variant="success"
+                          title="¡Look Publicado con Éxito!"
+                          message="Tu maquillaje ya forma parte de AurasMatch con su clasificación estética, paleta exacta y descripción accesible."
+                        />
+
+                        <View style={styles.successActionsRow}>
+                          {publishedLookId && (
+                            <AccessiblePressable
+                              accessibilityLabel="Ver detalle de la publicación recién subida"
+                              accessibilityHint="Navega a la pantalla completa de detalle estilo Pinterest de este look"
+                              onPress={() => router.push(`/look/${publishedLookId}` as any)}
+                              style={[
+                                styles.successButton,
+                                { backgroundColor: theme.primary },
+                              ]}>
+                              <ThemedText
+                                type="small"
+                                style={{ color: '#FFFFFF', fontWeight: '700' }}>
+                                🔍 Ver Publicación en Detalle
+                              </ThemedText>
+                            </AccessiblePressable>
+                          )}
+
+                          <AccessiblePressable
+                            accessibilityLabel="Subir otro maquillaje"
+                            accessibilityHint="Limpia la pantalla para comenzar a analizar una nueva foto"
+                            onPress={discardDraft}
+                            style={[
+                              styles.successButton,
+                              {
+                                backgroundColor: theme.background,
+                                borderColor: theme.border,
+                                borderWidth: 1,
+                              },
+                            ]}>
+                            <ThemedText type="small" style={{ fontWeight: '700' }}>
+                              ➕ Subir Otro Look
+                            </ThemedText>
+                          </AccessiblePressable>
+                        </View>
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <View style={styles.errorContainer}>
+                    <VisualAlertBanner
+                      variant="error"
+                      title="Publicación Rechazada por Filtro Anti-IA"
+                      message={`La evaluación arrojó ${Math.round(
+                        (analysisResult.ai_confidence_score ?? 0) * 100
+                      )}% de probabilidad sintética/IA (el máximo permitido para el Feed es < 50%). La publicación queda bloqueada del Feed público. Si es una fotografía real, solicita apelación arriba o prueba con otra foto.`}
+                      actionLabel="Probar con otra fotografía"
+                      onActionPress={discardDraft}
+                    />
                   </View>
                 )}
               </>
