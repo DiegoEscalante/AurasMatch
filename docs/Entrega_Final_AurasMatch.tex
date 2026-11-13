@@ -1,0 +1,291 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-noshorthands,es-tabla]{babel}
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,babel}
+\usepackage{xurl}
+\usepackage[hidelinks]{hyperref}
+
+\begin{document}
+
+\title{AurasMatch: Plataforma Móvil de Descubrimiento Estético y Recomendación Personalizada de Cosméticos Basada en Visión por Computadora}
+
+\author{
+\IEEEauthorblockN{Kenny Kaven Fang Cen}
+\IEEEauthorblockA{Ingeniería Informática \\
+Universidad de La Sabana \\
+Cundinamarca, Colombia \\
+kennyface@unisabana.edu.co \\
+ID: \textbf{[inserte aqui ID universitario]}}
+\and
+\IEEEauthorblockN{Diego Eduardo Escalante García}
+\IEEEauthorblockA{Ingeniería Informática \\
+Universidad de La Sabana \\
+Cundinamarca, Colombia \\
+diegoescga@unisabana.edu.co \\
+ID: \textbf{[inserte aqui ID universitario]}}
+}
+
+\maketitle
+
+\begin{center}
+\small\textit{Asignatura: Desarrollo de Aplicaciones Móviles (\textbf{[inserte aqui NRC o grupo]}) \textbar{} Docente: \textbf{[inserte aqui nombre del profesor]} \textbar{} Fecha: \textbf{[inserte aqui fecha]} \\
+Repositorio: \textbf{[inserte aqui URL oficial del repositorio GitHub/GitLab]}}
+\end{center}
+
+\begin{abstract}
+\textbf{AurasMatch} es una aplicación móvil multiplataforma (React Native 0.88 / Expo SDK 58 para Android, iOS y Web) orientada al descubrimiento visual de maquillaje real y a la recomendación personalizada de cosméticos mediante visión por computadora. Frente a la proliferación de contenido sintético generado por inteligencia artificial (\textit{AI slop}), la saturación publicitaria y la ausencia de herramientas para identificar tonos reales replicables, el sistema integra en un flujo unificado: (1) un \textbf{motor híbrido Anti-IA de tres etapas} (procedencia C2PA/EXIF, forense espectral FFT con microtextura facial normalizada por luminancia y evaluación visual-semántica), validado bajo un umbral estricto $< 0.50$ en servidor y cliente; (2) clasificación en cinco subculturas estéticas emergentes (\textit{Jirai Kei, Clean Girl, Goth, E-Girl, Y2K}) mediante un modelo de visión-lenguaje (\textbf{Jev}); y (3) segmentación facial en cuatro regiones anatómicas con \textbf{MediaPipe FaceLandmarker} (468 landmarks) y emparejamiento perceptual en espacio \textbf{CIELAB ($\Delta E$ CIE76)} sobre un catálogo real de \textbf{3,085 SKUs cosméticos} en Supabase PostgreSQL. Sobre esta visión concebida en Fase 1, la arquitectura materializa íntegramente las \textbf{16 promesas de accesibilidad universal} formuladas en Fase 2 conforme a las pautas \textbf{WCAG 2.1 / 2.2 Nivel AA y AAA}, aplicando además una compactación \textit{DRY} que garantiza estabilidad nativa multiplataforma.
+\end{abstract}
+
+\begin{IEEEkeywords}
+visión por computadora, descubrimiento visual, recomendación de cosméticos, accesibilidad móvil, WCAG 2.1/2.2, análisis facial, detección anti-IA, React Native, Expo, CIELAB.
+\end{IEEEkeywords}
+
+\section{Consolidación de Visión del Producto, Problema y Estado del Arte (Evolución Fase 1)}
+
+\subsection{Resumen Ejecutivo, Propuesta de Valor (UVP) y \textit{User Personas}}
+\begin{itemize}
+    \item \textbf{Nombre del proyecto:} AurasMatch.
+    \item \textbf{Eslogan:} \textit{La primera red de descubrimiento estético y recomendación de cosméticos impulsada por visión por computadora, libre de contenido sintético generado por IA y saturación publicitaria.}
+    \item \textbf{Propósito:} Reducir la brecha entre la inspiración digital de maquillaje y su recreación física en el mundo real. La aplicación permite explorar looks verificados como 100\,\% humanos (\texttt{is\_human\_verified = true} y \texttt{ai\_confidence\_score < 0.50}), filtrarlos por subcultura, zona facial y familia cromática, y descomponer fotografías propias para obtener cosméticos reales comprables.
+\end{itemize}
+
+El sistema consolida tres \textit{user personas} definidas a lo largo de las Fases 1 y 2:
+\begin{enumerate}
+    \item \textbf{Usuario Primario (Entusiasta Gen Z / Millennial):} Consumidores cotidianos y participantes activos en subculturas visuales (\textit{E-Girl, Goth, Clean Girl, Jirai Kei, Y2K}). Enfrentan frustración por imágenes sintéticas irreplicables (\textit{AI slop}), ausencia de etiquetado de nicho y saturación de anuncios. Obtienen un feed humano verificado, Filtro Triple contextual y recomendación directa de SKUs por zona facial.
+    \item \textbf{Usuario Secundario (Maquillador / Creador / Marca):} Artistas independientes, creadores de contenido y marcas orientadas a comercio electrónico. Sufren pérdida de alcance orgánico frente a granjas sintéticas y riesgo de falsos positivos. Reciben atribución directa al catálogo, desglose transparente del motor Anti-IA y un \textbf{mecanismo formal de apelación humana} (\texttt{appeal\_status}).
+    \item \textbf{Usuario con Necesidades de Accesibilidad (Fase 2):} Personas con \textbf{motricidad limitada} (uso de teclado externo, pulsadores o un toque sin gestos complejos), \textbf{diversidad cognitiva} (dislexia, fatiga por límites de tiempo, fotosensibilidad), \textbf{diversidad auditiva} y \textbf{diversidad visual} (daltonismo, baja visión, fotofobia, lectores \textit{TalkBack}/\textit{VoiceOver}/\textit{NVDA}). Cuentan con zoom discreto por botones, borradores sin caducidad, fuentes para dislexia, escalado hasta 200\,\%, Alto Contraste AAA (21:1), alertas visuales/hápticas, síntesis TTS y \textit{Alt-Text} IA editable.
+\end{enumerate}
+
+\subsection{Síntesis del Problema y Análisis Competitivo Actualizado}
+La Propuesta de Fase 1 identificó tres fricciones estructurales: (1) \textbf{inviabilidad práctica} al intentar recrear looks sintéticos con pigmentos y texturas físicamente imposibles~\cite{ref8}; (2) \textbf{desalineación comercial y algorítmica}, donde el \textbf{71\,\%} de los consumidores rechaza experiencias publicitarias percibidas como intrusivas según YouGov~\cite{ref3}; y (3) \textbf{dificultad para identificar tonos y productos reales} a partir de una imagen.
+
+A escala de mercado, el sector \textit{Beauty Tech} proyecta alcanzar \textbf{USD \$172.9 mil millones para 2030} con una tasa de crecimiento anual compuesta (\textit{CAGR}) del \textbf{17.9\,\%}~\cite{ref1,ref2}. Simultáneamente, Meltwater reporta un incremento de nueve veces en menciones de ``\textit{AI slop}'' con \textbf{54\,\%} de sentimiento negativo~\cite{ref4}, Raptive estima una caída del \textbf{14\,\%} en intención de compra ante contenido percibido como IA~\cite{ref4}, y estudios de la Teoría de la Elección Racional y la Universidad de Aalto evidencian fatiga informacional y menor permanencia cuando domina contenido sintético~\cite{ref5,ref6,ref7}. La Tabla~\ref{tab:competidores} contrasta los competidores de Fase 1 frente al producto final construido.
+
+\begin{table*}[t]
+\centering
+\caption{Matriz Comparativa de Competidores (Fase 1) vs. Producto Final AurasMatch}
+\label{tab:competidores}
+\renewcommand{\arraystretch}{1.22}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{2.3cm} p{3.1cm} p{3.1cm} p{2.8cm} X}
+\toprule
+Solución & Enfoque Principal & Experiencia de Usuario & Modelo de Negocio & Brechas Superadas por AurasMatch Final \\
+\midrule
+SkinSort & Cuidado de la piel (\textit{skincare}), ingredientes y compatibilidad. & Búsqueda centrada en rutinas, ingredientes y puntajes; maquillaje secundario. & Freemium con anuncios, afiliados y suscripción \textit{Premium}. & No provee descubrimiento visual de maquillaje, taxonomía de subculturas ni análisis cromático facial. \\
+Dupe AI & Búsqueda de alternativas económicas (\textit{dupes}) desde fotografía. & El usuario sube un look y la app sugiere equivalentes de menor precio. & Freemium con compras integradas (\textit{Dupe Pro}). & Orientada solo a \textit{dupes}; carece de comunidad verificada Anti-IA, subculturas y accesibilidad adaptativa. \\
+Temptalia \newline \textit{(ref. MakeupAlley)} & Reseñas comunitarias, \textit{swatches} y matrices de tonos textuales. & Orientada a investigación cuando ya se conoce marca o producto exacto. & Contenido gratuito monetizado con anuncios, afiliados y patrocinios. & No descompone selfies reales del usuario ni permite descubrir micro-estéticas sin conocer el producto. \\
+Pinterest & Descubrimiento visual generalista mediante \textit{Pins} y tableros. & Búsqueda abierta por texto/imagen entre millones de referencias mezcladas. & Gratuita con alta saturación publicitaria y comercio. & Invadida por imágenes sintéticas generadas por IA~\cite{ref8}, sin extracción perceptual de SKUs ni filtros cosméticos. \\
+AurasMatch (Final) & Red estética 100\,\% humana + CV facial + Accesibilidad AA/AAA. & Feed sin IA, Filtro Triple, análisis por región facial, popup de SKU y ajuste AAA. & Libre de anuncios intrusivos; atribución directa a 3,085 SKUs reales. & \textbf{Integra unificadamente:} filtro híbrido Anti-IA ($< 0.50$), clasificación subcultural, CIELAB $\Delta E$ y WCAG 2.1/2.2. \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\subsection{Innovación Lograda y Evolución del MVP (Fase 1 vs. Fase 3)}
+Al desplegar el sistema sobre Google Cloud Run sin GPU, Supabase y Cloudflare R2, se ejecutaron pivotes técnicos orientados a baja latencia y precisión móvil (Tabla~\ref{tab:pivotes}):
+\begin{enumerate}
+    \item \textbf{MediaPipe FaceLandmarker con exclusión poligonal:} frente a redes pesadas (\textit{BiSeNet}/\textit{SegFace}), \texttt{face\_landmarker.task} (468 puntos 3D)~\cite{ref20} construye máscaras positivas y de sustracción (\texttt{lips} excluyendo cavidad oral; \texttt{brows}; \texttt{eyelids}; \texttt{lash\_line} excluyendo esclerótica ocular) en \texttt{backend/app/cv/mediapipe\_cv.py}.
+    \item \textbf{Clasificación con \texttt{Jev} (\texttt{jev-latest}):} reemplaza el \textit{fine-tuning} local de CLIP manteniendo baja huella de RAM y ejecutándose en paralelo con la consulta a Supabase (\texttt{asyncio.gather}).
+    \item \textbf{CIELAB ($\Delta E$ CIE76) y catálogo ampliado a 3,085 SKUs:} convierte píxeles válidos de sRGB a CIE $L^*a^*b^*$ (D65) y obtiene el color dominante por media aritmética (idéntica a \texttt{KMeans(n\_clusters=1)}). El cliente traduce cada código HEX a nombres descriptivos en español (\texttt{color-names.ts}).
+    \item \textbf{Filtro Híbrido Anti-IA de 3 etapas ($< 0.50$):} combina inspección binaria C2PA/JUMBF/EXIF (\textit{Etapa 1}), análisis espectral FFT y microtextura dérmica normalizada por luminancia con piso $0.18$ para evitar sesgos en pieles oscuras o luz blanda (\textit{Etapa 2}), y fusión ponderada con \texttt{vision\_ai\_score} (\textit{Etapa 3}) validada tanto en servidor (\texttt{anti\_ai.py}) como en cliente (\texttt{isLookHumanApproved}).
+\end{enumerate}
+
+\begin{table*}[t]
+\centering
+\caption{Evolución Técnica Entre Alcance Propuesto (Fase 1) e Implementación Final (Fase 3)}
+\label{tab:pivotes}
+\renewcommand{\arraystretch}{1.18}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{2.9cm} p{4.0cm} p{4.6cm} X}
+\toprule
+Dimensión & Propuesta Inicial (Fase 1) & Producto Desplegado (Fase 3) & Ventaja Verificada \\
+\midrule
+Parseo Facial & \textit{BiSeNet} / \textit{SegFace} sobre ojos y labios. & MediaPipe \texttt{FaceLandmarker} (468 puntos) en 4 zonas anatómicas~\cite{ref20}. & Menor latencia en CPU Cloud Run; excluye dientes y blanco ocular. \\
+Modelo Visión-Lenguaje & \textit{Fine-tuning} de \texttt{CLIP} para 5 subculturas. & \texttt{jev-latest} estructurado (subculturas + \texttt{vision\_ai\_score}). & Cero pesos CLIP en RAM; ejecución concurrente con BD. \\
+Catálogo Cosmético & Base vectorial inicial de 1,000 SKUs. & 3,085 SKUs reales en \texttt{public.products} (6 categorías). & Cobertura +208\,\% sobre el MVP con cálculo perceptual CIE76. \\
+Verificación Anti-IA & C2PA + análisis visual general. & Híbrido 3 etapas + umbral $< 0.50$ + apelación humana. & Blindaje en Cloud Run, triggers RLS y cliente (\texttt{database.ts}). \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\section{Arquitectura de Software Móvil e Implementación Técnica}
+
+\subsection{Diagrama de Arquitectura \textit{End-to-End}}
+La Fig.~\ref{fig:arch} ilustra la topología completa entre cliente móvil/web (Expo SDK 58, React Native \texttt{0.88.1}), microservicio FastAPI en Google Cloud Run, Supabase (PostgreSQL + Auth JWT) y Cloudflare R2.
+
+\begin{figure*}[t]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=0.65cm and 1.35cm,
+    box/.style={draw, rounded corners=4pt, align=center, font=\scriptsize, inner sep=5pt, minimum width=4.3cm, fill=gray!8},
+    cloudbox/.style={draw, rounded corners=4pt, align=center, font=\scriptsize, inner sep=5pt, minimum width=4.2cm, fill=blue!6},
+    databox/.style={draw, rounded corners=4pt, align=center, font=\scriptsize, inner sep=5pt, minimum width=4.1cm, fill=green!6},
+    arr/.style={-{Stealth[length=2.2mm]}, thick}
+]
+    \node[box] (ui) {\textbf{Pantallas JSX + Primitivas UI}\\ \texttt{index, look/[id], upload, profile}\\ \texttt{AccessibleModal, LookMiniCard, ActionBannerButton}};
+    \node[box, below=0.55cm of ui] (hooks) {\textbf{Headless Custom Hooks \& Helpers}\\ \texttt{useFeed, useLookDetail, useUploadLook}\\ \texttt{useUserProfile, look-action-helpers.ts}};
+    \node[box, below=0.55cm of hooks] (ctx) {\textbf{Context API + Servicios Cliente}\\ \texttt{Accessibility, Auth, AnalysisLock}\\ \texttt{supabase.ts (Bus) · r2-storage.ts · AsyncStorage}};
+
+    \node[cloudbox, right=1.55cm of hooks] (api) {\textbf{Backend IA (FastAPI 2.3.0 · Cloud Run)}\\ \texttt{/analyze-look} \textbar{} \texttt{/analyze-look/upload} \textbar{} \texttt{/health}\\ \texttt{verify\_supabase\_jwt} + \texttt{asyncio.to\_thread/gather}};
+    \node[cloudbox, above=0.55cm of api] (cv) {\textbf{Pipeline CV y Anti-IA}\\ MediaPipe 468 Landmarks \textbar{} CIELAB $\Delta E$\\ C2PA/EXIF + FFT/Microtextura + \texttt{Jev}};
+
+    \node[databox, right=1.35cm of api] (r2) {\textbf{Cloudflare R2}\\ Bucket \texttt{auras-match}\\ JPEGs normalizados + carga directa \texttt{expo-image}};
+    \node[databox, below=0.65cm of r2] (supa) {\textbf{Supabase Cloud}\\ Auth JWT + PostgreSQL (RLS/RPCs)\\ \texttt{profiles · looks · products (3,085) · saved\_looks}};
+
+    \begin{pgfonlayer}{background}
+        \node[draw, dashed, rounded corners=6pt, inner sep=7pt, fit=(ui)(hooks)(ctx), label={[font=\scriptsize\bfseries]above:Cliente Móvil/Web (Expo SDK 58 · RN 0.88)}] {};
+    \end{pgfonlayer}
+
+    \coordinate (toprail) at ([yshift=0.95cm]cv.north);
+
+    \draw[arr] (ui) -- (hooks);
+    \draw[arr] (hooks) -- (ctx);
+    \draw[arr] (hooks.east) -- node[above, font=\tiny, align=center]{JSON Base64\\+ Bearer JWT} (api.west);
+    \draw[arr] (api.north) -- (cv.south);
+    \draw[arr] (api.east) -- node[above, font=\tiny, align=center]{Upload\\JPEG} (r2.west);
+    \draw[arr] (api.south) |- node[above, pos=0.72, font=\tiny]{INSERT / SELECT} (supa.west);
+    \draw[arr] (ctx.south) -- ++(0,-0.32) -| node[below, pos=0.25, font=\tiny]{PostgREST / RPCs / Auth JWT} (supa.south);
+    \draw[arr, dashed] (r2.north) |- node[above, pos=0.75, font=\tiny]{Lectura directa (\texttt{expo-image})} (toprail) -| (ui.north);
+\end{tikzpicture}%
+}
+\caption{Arquitectura \textit{End-to-End} de AurasMatch entre cliente Expo/React Native, microservicio FastAPI en Cloud Run, Cloudflare R2 y Supabase.}
+\label{fig:arch}
+\end{figure*}
+
+\subsection{Decisiones Arquitectónicas, Gestión de Estado y Compactación \textit{DRY}}
+\begin{enumerate}
+    \item \textbf{Navegación sobre \texttt{<Slot />} en Expo Router:} el contenedor estándar \texttt{<Tabs>} de \texttt{expo-router/ui} redirigía prematuramente la ruta dinámica \texttt{/look/[id]}. Implementar \texttt{app-tabs.tsx} con \texttt{<Slot />}, \texttt{usePathname()} y \texttt{useRouter()} preserva la barra fija de tres pestañas (\textit{Feed}, \textit{Subir}, \textit{Usuario}) y permite bloquear navegación y botón físico \textit{Atrás} de Android (\texttt{BackHandler} en \texttt{AnalysisLockContext}) durante inferencias IA.
+    \item \textbf{Headless Custom Hooks + Context API frente a Redux Toolkit:} el estado global se concentra en tres contextos ortogonales en \texttt{\_layout.tsx} (\texttt{AccessibilityProvider}, \texttt{AuthProvider}, \texttt{AnalysisLockProvider}), mientras la lógica de red y dominio vive encapsulada en hooks (\texttt{useFeed}, \texttt{useLookDetail}, \texttt{useUploadLook}, \texttt{useUserProfile}). Frente a Redux Toolkit, Context API evitó duplicar cachés relacionales y \textit{boilerplate} de slices; además, la abstracción por hooks deja abierta una eventual adopción de Redux sin alterar vistas JSX.
+    \item \textbf{Bus Reactivo \textit{Cross-Screen} y Persistencia Segura:} debido a que \texttt{<Slot />} desmonta pestañas inactivas, \texttt{supabase.ts} mantiene un bus en memoria (\texttt{subscribeLookDataChanges}) y una función pura \texttt{applyLookMutationToRow} que sincronizan \textit{likes}, guardados, comentarios, ediciones de \textit{Alt-Text}, apelaciones y nuevas publicaciones entre \textit{Feed}, \textit{Detalle} y \textit{Perfil}. La sesión usa \texttt{safeAuthStorage} (protegido contra SSR donde \texttt{window} es indefinido) con \texttt{persistSession: true} y \texttt{autoRefreshToken: true}; los borradores de subida persisten indefinidamente en \texttt{AsyncStorage} (\texttt{@aurasmatch/upload\_look\_draft\_v1}).
+    \item \textbf{Compactación Modular \textit{DRY} del Frontend:} se auditó e implementó una refactorización sistemática en la rama \texttt{refactor/frontend-dry-compaction} (commit \texttt{b2198de}, \texttt{-2,445 / +1,242} líneas en 30 archivos) sin modificar \texttt{backend/}: se eliminaron 8 módulos huérfanos, se unificaron los 6 diálogos modales en \texttt{AccessibleModal} y \texttt{ContextualAuthModal}, se crearon las primitivas reutilizables \texttt{ActionBannerButton} y \texttt{LookMiniCard}, se unificó la mutación optimista en \texttt{look-action-helpers.ts}, se extrajo \texttt{applyPickedImageAsset} en \texttt{use-upload-look.ts}, y se centralizaron diccionarios de regiones/categorías en \texttt{database.ts}.
+    \item \textbf{Transporte Base64 y Optimización de Listas:} para evitar la excepción nativa \texttt{unsupported formdatapart implementation} de React Native \texttt{0.88} con \texttt{FormData} multiparte, el cliente envía \texttt{image\_base64} en JSON hacia \texttt{POST /analyze-look}. El Feed adapta dinámicamente \texttt{FlatList} entre 2 y 1 columna al alcanzar escalado tipográfico $\ge 150\,\%$; \texttt{use-user-profile.ts} ejecuta consultas concurrentes con \texttt{Promise.all}; y el servidor ejecuta MediaPipe en hilo separado (\texttt{asyncio.to\_thread}) en paralelo con \texttt{Jev} y SQL (\texttt{asyncio.gather}).
+\end{enumerate}
+
+\subsection{Modelo de Datos, Seguridad RLS y Contratos REST}
+El esquema relacional en Supabase PostgreSQL comprende cuatro tablas principales:
+\begin{itemize}
+    \item \texttt{public.profiles}: \texttt{id} (PK), \texttt{username}, \texttt{avatar\_path}, \texttt{accessibility\_prefs} (JSONB), \texttt{created\_at}. Sincronizada idempotente desde el cliente mediante \texttt{ensureUserProfile()}.
+    \item \texttt{public.looks}: \texttt{id} (PK), \texttt{user\_id} (FK), \texttt{image\_path}, \texttt{is\_human\_verified}, \texttt{ai\_confidence\_score}, \texttt{subculture[]}, \texttt{subculture\_confidence\_score}, \texttt{extracted\_regions} (JSONB), \texttt{tags[]}, y columnas aditivas de Fase 3: \texttt{description} (Alt-Text), \texttt{liked\_by} (\texttt{uuid[]}), \texttt{appeal\_status} y \texttt{comments} (JSONB).
+    \item \texttt{public.products}: \texttt{id} (PK), \texttt{brand}, \texttt{product\_name}, \texttt{shade\_name}, \texttt{hex\_value}, \texttt{category}, \texttt{price\_usd}, \texttt{cielab\_l}, \texttt{cielab\_a}, \texttt{cielab\_b} (3,085 registros).
+    \item \texttt{public.saved\_looks}: clave compuesta (\texttt{user\_id}, \texttt{look\_id}) y \texttt{created\_at}.
+\end{itemize}
+
+Mediante \texttt{docs/supabase-rls-and-rpcs.sql} se aseguró el principio de menor privilegio con llave pública \texttt{anon}: la política \texttt{looks\_update\_own} habilita edición de \texttt{description} y \texttt{appeal\_status} solo al autor; el trigger \texttt{protect\_look\_verification\_columns} bloquea alteraciones cliente sobre \texttt{is\_human\_verified} o \texttt{ai\_confidence\_score}; y las funciones RPC \texttt{SECURITY DEFINER} (\texttt{toggle\_look\_like(uuid)} y \texttt{add\_look\_comment(uuid, jsonb)}) permiten interacciones seguras sobre publicaciones de terceros. En el microservicio FastAPI (\texttt{main.py} v2.3.0), \texttt{GET /health} verifica disponibilidad y \texttt{POST /analyze-look} (con Bearer JWT obligatorio) ejecuta segmentación, cálculo CIELAB, clasificación \texttt{Jev}, motor Anti-IA, carga a R2 e inserción en \texttt{public.looks}, devolviendo HTTP \texttt{422} si no hay rostro detectable o \texttt{401} ante JWT inválido.
+
+\section{Implementación y Auditoría de Accesibilidad Móvil (Consolidación Fase 2)}
+
+\subsection{Cumplimiento WCAG 2.1 / 2.2 Nivel AA/AAA y Regla Móvil-Primero}
+El diseño accesible adopta las pautas oficiales WCAG 2.1/2.2~\cite{ref19} atendiendo tensiones documentadas de accesibilidad digital real~\cite{ref13}:
+\begin{enumerate}
+    \item \textbf{Semántica Nativa (\textit{TalkBack} / \textit{VoiceOver}) y Guardas \texttt{RCTView}:} los componentes usan únicamente roles nativos válidos de React Native (\texttt{button, tab, switch, search, header, alert, text, image, toolbar, checkbox}) y propiedades \texttt{accessible}, \texttt{accessibilityLabel}, \texttt{accessibilityHint} y \texttt{accessibilityState}. Los atributos ARIA de Web (\texttt{role="dialog"}, \texttt{aria-modal}, \texttt{tabIndex}) permanecen protegidos bajo \texttt{Platform.OS === 'web'}, previniendo cierres fatales de \texttt{RCTViewManager} en Android/iOS. \texttt{LookCard} agrupa acciones mediante \texttt{accessibilityActions}.
+    \item \textbf{Contraste Cromático, Escalado al 200\,\% e Independencia del Color:} en \texttt{theme.ts}, la paleta clara alcanza \textbf{18.5:1} (\texttt{\#111318} sobre \texttt{\#FFFFFF}; secundario \textbf{7.1:1}, primario \textbf{7.8:1}), la oscura alcanza \textbf{19.6:1} (\texttt{\#F7F8FA} sobre \texttt{\#0B0C0E}), y el tema \textbf{Alto Contraste AAA} logra \textbf{21:1} (\texttt{\#FFFFFF} sobre \texttt{\#000000}). \texttt{ThemedText} escala conjuntamente \texttt{fontSize} y \texttt{lineHeight} (\texttt{maxFontSizeMultiplier=\{2.0\}}) evitando recorte (\textit{clipping}), añade \texttt{+0.12} al interlineado en modo dislexia y \texttt{index.tsx} cambia a 1 columna desde \texttt{150\,\%}. \texttt{ColorSwatchBadge} oculta el punto cromático decorativo (\texttt{importantForAccessibility="no"}) y presenta el nombre español CIELAB más el código \texttt{HEX}.
+    \item \textbf{Ergonomía Táctil y Feedback Multimodal:} \texttt{AccessiblePressable} impone \texttt{MinTouchTargetSize = 48} dp y \texttt{DEFAULT\_HIT\_SLOP = 8} dp, junto con \texttt{focusRing} de \texttt{2 px}, secciones plegables \texttt{AccessibleCollapsible} (WCAG 2.4.1 \textit{Bypass Blocks}) y \texttt{VisualAlertBanner} (borde visual, háptica \texttt{expo-haptics} y anuncio hablado \texttt{announceStatus}).
+\end{enumerate}
+
+\subsection{Matriz Trazable Completa (Propuesta Corte 2 vs. Código Final)}
+La Tabla~\ref{tab:trazabilidad} verifica la implementación de las \textbf{16 promesas} de la Sección V de \texttt{2ndPhaseProposal.pdf} sobre el código fuente compactado actual.
+
+\begin{table*}[t]
+\centering
+\caption{Matriz Trazable Completa: Propuesta de Accesibilidad (Corte 2) vs. Implementación Final (Fase 3)}
+\label{tab:trazabilidad}
+\renewcommand{\arraystretch}{1.15}
+\scriptsize
+\begin{tabularx}{\textwidth}{>{\bfseries}p{2.7cm} p{1.4cm} p{4.2cm} X p{1.3cm}}
+\toprule
+Promesa (Corte 2) & WCAG & Archivo(s) Verificados & Mecanismo Técnico Implementado & Estado \\
+\midrule
+A.1 Navegación por teclado & 2.1.1, 2.4.7~\cite{ref9} & \texttt{accessible-pressable.tsx}, \texttt{app-tabs.tsx}, \texttt{accessible-modal.tsx}, \texttt{triple-filter-dropdown.tsx} & \texttt{tabIndex}, \texttt{onFocus}/\texttt{onBlur} con \texttt{focusRing} de 2\,px y cierre con \texttt{Escape} en modales/paneles Web. & Completa \\
+A.2 Tecnologías de asistencia & 4.1.2, 2.1.1 & \texttt{accessible-pressable.tsx}, \texttt{look-card.tsx} & Roles nativos válidos, \texttt{accessibilityState}, \texttt{accessibilityHint} y \texttt{accessibilityActions} agrupadas. & Completa \\
+A.3 Comandos de voz & 2.5.3 & \texttt{assistive-voice-bar.tsx}, \texttt{\_layout.tsx}, \texttt{accessibility-modal.tsx}, \texttt{look/[id].tsx} & Consistencia etiqueta-nombre para \textit{Voice Control}/\textit{Voice Access} + paleta flotante \texttt{AssistiveVoiceBar}. & Completa \\
+A.4 Zonas táctiles amplias & 2.5.5, 2.5.8~\cite{ref10} & \texttt{theme.ts}, \texttt{accessible-pressable.tsx}, \texttt{action-banner-button.tsx}, \texttt{accessible-modal.tsx} & \texttt{MinTouchTargetSize = 48}\,dp y \texttt{DEFAULT\_HIT\_SLOP = 8}\,dp transversales en botones, banners y modales. & Completa \\
+A.5 Gestos alternativos & 2.5.1~\cite{ref11} & \texttt{step-zoom-image.tsx}, \texttt{look/[id].tsx} & Barra \texttt{toolbar} con botones \texttt{- Zoom}, \texttt{Restablecer} y \texttt{+ Zoom} (100\,\%--350\,\%, paso 50\,\%). & Completa \\
+B.1 Fuentes para dislexia & 1.4.8~\cite{ref12,ref18} & \texttt{theme.ts}, \texttt{themed-text.tsx}, \texttt{accessibility-modal.tsx} & Selector Sans (\textit{Verdana/Arial}) y Mono (\textit{Courier}), con \texttt{+0.12} de interlineado y \texttt{letterSpacing 0.6}. & Completa \\
+B.2 Control de animaciones & 2.3.1, 2.3.3~\cite{ref14} & \texttt{accessibility-context.tsx}, \texttt{collapsible.tsx}, \texttt{accessibility-modal.tsx} & Sincronización con \texttt{isReduceMotionEnabled} del SO e interruptor manual \texttt{reduced\_motion}. & Completa \\
+B.3 Diseño predecible & 3.2.3, 3.2.4~\cite{ref13} & \texttt{app-tabs.tsx}, \texttt{profile.tsx}, \texttt{auth-card.tsx}, \texttt{contextual-auth-prompt.tsx} & 3 pestañas fijas, etiquetas fijas visibles en formularios y \textit{Gradual Engagement}. & Completa \\
+B.4 Sin temporizadores & 2.2.1 & \texttt{use-upload-look.ts}, \texttt{supabase.ts}, \texttt{comments-section-collapsible.tsx} & Borrador persistente sin expiración en \texttt{AsyncStorage}, comentarios sin reloj y \texttt{autoRefreshToken}. & Completa \\
+B.5 Búsqueda tolerante a fallos & 3.3.3 & \texttt{fuzzy-search.ts}, \texttt{index.tsx} & Normalización sin diacríticos + distancia de \textbf{Levenshtein} y chips predictivos interactivos. & Completa \\
+C.1 Alertas visuales/hápticas & 1.3.3, 4.1.3~\cite{ref15} & \texttt{visual-alert-banner.tsx}, \texttt{a11y-feedback.ts} & \texttt{VisualAlertBanner} con borde de severidad, \texttt{accessibilityRole="alert"}, háptica y TTS. & Completa \\
+D.1 \textit{Alt-Text} editable + TTS & 1.1.1~\cite{ref16,ref17} & \texttt{use-upload-look.ts}, \texttt{upload.tsx}, \texttt{use-look-detail.ts}, \texttt{a11y-feedback.ts} & Sugerencia automática CIELAB en español, edición libre en \texttt{looks.description} y síntesis de voz. & Completa \\
+D.2 Lectores y daltonismo & 1.3.1, 1.4.1 & \texttt{themed-text.tsx}, \texttt{color-swatch-badge.tsx}, \texttt{color-names.ts}, \texttt{accessible-modal.tsx} & Encabezados semánticos, foco confinado (\texttt{accessibilityViewIsModal}), región viva y nombre cromático. & Completa \\
+D.3 Contraste regulable AAA & 1.4.3, 1.4.6 & \texttt{theme.ts}, \texttt{accessibility-modal.tsx} & Ratios verificados (18.5:1 claro, 19.6:1 oscuro) y tema Alto Contraste AAA (21:1). & Completa \\
+D.4 Escalado 200\,\% responsivo & 1.4.4 & \texttt{accessibility-context.tsx}, \texttt{themed-text.tsx}, \texttt{index.tsx} & Escalado 100\,\%--200\,\%, \texttt{lineHeight} conjunto y cambio de Feed a 1 columna desde 150\,\%. & Completa \\
+D.5 Modo Oscuro & Confort V.D & \texttt{theme.ts}, \texttt{accessibility-context.tsx} & Detección automática del sistema (\texttt{useColorScheme}) y selección manual en \texttt{\#0B0C0E}. & Completa \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\section{Pruebas Funcionales, Rendimiento y Validación de Usuario}
+
+\subsection{Casos de Prueba Técnicos y Funcionales Ejecutados}
+Tras concluir la compactación \textit{DRY} y el refuerzo del umbral Anti-IA en el cliente, se ejecutaron las comprobaciones estáticas, de seguridad y de contratos resumidas en la Tabla~\ref{tab:pruebas}. Cabe señalar que \texttt{frontend/package.json} no incorpora ESLint local configurado.
+
+\begin{table}[t]
+\centering
+\caption{Resumen de Verificaciones Ejecutadas Post-Compactación}
+\label{tab:pruebas}
+\renewcommand{\arraystretch}{1.15}
+\scriptsize
+\begin{tabularx}{\columnwidth}{>{\bfseries}p{2.2cm} p{2.9cm} X}
+\toprule
+Verificación & Escenario & Resultado Observado \\
+\midrule
+Compilación TypeScript & \texttt{npx tsc --noEmit} (\texttt{typedRoutes} + \texttt{reactCompiler}). & Salida \texttt{0} (cero errores tras refactorización DRY). \\
+Roles Nativos (\texttt{RCTView}) & Auditoría estática de \texttt{accessibilityRole=} en \texttt{frontend/src/}. & 100\,\% roles válidos en nativo; ARIA Web bajo \texttt{Platform.OS}. \\
+Regla Anti-IA $< 0.50$ & Bloqueo en subida, filtro Feed, \texttt{LookMiniCard} y \texttt{anti\_ai.py}. & Publicación sintética $\ge 0.50$ bloqueada hacia Feed; apelación habilitada. \\
+Seguridad Git / Secretos & Revisión \texttt{git ls-files "*env*"} y búsqueda de claves privadas. & Cero credenciales en historial; solo \texttt{.env.example}. \\
+Persistencia Supabase & Auth JWT, \texttt{saved\_looks} y migración \texttt{supabase-rls-and-rpcs.sql}. & Conectividad verificada; RLS/RPCs quirúrgicas sin alterar \texttt{auth.users}. \\
+Errores y Offline & \texttt{422} (sin rostro), \texttt{401} y desconexión de red. & Borrador intacto + \textbf{Simulación Asistida} con catálogo real. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Auditoría de Accesibilidad en Dispositivo y Evidencia Visual}
+Para completar la validación sobre hardware real (Android \textit{TalkBack} / iOS \textit{VoiceOver}) y navegador Web:
+\begin{itemize}
+    \item \textbf{Equipo físico y versión evaluada:} \textbf{[inserte aqui marca, modelo del teléfono y versión de Android/iOS + Expo Go]}.
+    \item \textbf{Validación TalkBack / VoiceOver tras compactación DRY:} \textbf{[inserte aqui resultados observados al recorrer LookCard, AccessibleModal, ProductDetailModal y ActionBannerButton]}.
+    \item \textbf{Validación visual 200\,\% y Alto Contraste AAA:} \textbf{[inserte aqui confirmación de 1 columna sin clipping y legibilidad]}.
+    \item \textbf{Flujo End-to-End en vivo y capturas:} \textbf{[inserte aqui resultado con foto real vs. imagen IA en Cloud Run + inserte Fig. 1--4 como imágenes \texttt{\textbackslash includegraphics}]}.
+\end{itemize}
+
+\section{Conclusiones, Limitaciones y Trabajo Futuro}
+
+\subsection{Balance Técnico y Retos Superados}
+El producto terminado demuestra la viabilidad técnica planteada en la Fase 1 e integra de extremo a extremo las 16 pautas inclusivas de la Fase 2. Durante la ingeniería de campo se resolvieron cuatro desafíos críticos: (1) prevención de fallos \texttt{RCTViewManager} aislando atributos Web ARIA; (2) estabilización de cargas multimedia en React Native \texttt{0.88} mediante JSON Base64 en \texttt{POST /analyze-look} y navegación estable sobre \texttt{<Slot />}; (3) coherencia estricta del umbral Anti-IA ($< 0.50$) entre FastAPI, triggers RLS en PostgreSQL y cliente; y (4) reducción sustancial de código duplicado mediante la refactorización \textit{DRY}.
+
+\subsection{Limitaciones y Trabajo Futuro}
+Entre las limitaciones actuales se encuentran la necesidad de ejecutar una única vez \texttt{docs/supabase-rls-and-rpcs.sql} para habilitar RPCs multiusuario, la ausencia de un panel administrativo dedicado para moderar registros con \texttt{appeal\_status = 'pending'} y la falta de una suite E2E/CI automatizada. Como evolución futura se proyectan: (1) consola web de moderación humana; (2) evolución visual \textit{Stitch-Ready} sin reescribir hooks ni tokens; (3) ampliación del catálogo más allá de los 3,085 SKUs con enlaces comerciales; y (4) integración de ESLint y pruebas automatizadas de regresión accesible.
+
+\begin{thebibliography}{99}
+\bibitem{ref1} Grand View Research, ``Beauty Tech Market Size, Share \& Growth Report, 2025--2030,'' Grand View Research, 2026. [En línea]. Disponible: \url{https://www.grandviewresearch.com/industry-analysis/beauty-tech-market-report}
+\bibitem{ref2} ``The Role of Marketing Research in Understanding Consumer Behavior and Preferences,'' ResearchGate, 2024. [En línea]. Disponible: \url{https://www.researchgate.net/publication/380888546_The_Role_of_Marketing_Research_in_Understanding_Consumer_Behavior_and_Preferences}
+\bibitem{ref3} ``Ads on social media have crossed a tipping point, says expert,'' Silicon Republic. [En línea]. Disponible: \url{https://www.siliconrepublic.com/business/social-media-ads-ai-meta-youtube-instagram-suhas-vijayakumar-ucd}
+\bibitem{ref4} C. O'Brien, ``Is AI Slop the New Brand Risk?,'' Digital Marketing Institute, jun. 23, 2026. [En línea]. Disponible: \url{https://digitalmarketinginstitute.com/blog/is-ai-slop-the-new-brand-risk}
+\bibitem{ref5} K. Logan, L. F. Bright y S. L. Grau, ``Unfriend me, please!: Social media fatigue and the theory of rational choice,'' \textit{Journal of Marketing Theory and Practice}, vol. 26, no. 4, pp. 357--367, 2018, doi: 10.1080/10696679.2018.1488219.
+\bibitem{ref6} ``Impact of AI-Generated Content on User Satisfaction and Time Spent on Digital Platforms,'' Aaltodoc. [En línea]. Disponible: \url{https://aaltodoc.aalto.fi/bitstreams/9ecb40ce-3a5a-4fbc-bbd7-7132a5d372b0/download}
+\bibitem{ref7} M. Liu, ``Trust Vortex in Content Design for Social Media Platforms from the Perspective of Generative AI: An Empirical Study on Xiaohongshu's Algorithmic Seeding Ecology,'' Atlantis Press, 2025. [En línea]. Disponible: \url{https://www.atlantis-press.com/article/126019086.pdf}
+\bibitem{ref8} ``How AI is Ruining Pinterest and Why It Matters for Businesses,'' Local Partnership Joint Market Solutions. [En línea]. Disponible: \url{https://localpartnershipjointmarketsolutions.com/MEDIA/how-ai-is-ruining-pinterest-and-why-it-matters-for-businesses}
+\bibitem{ref9} Level Access, ``Keyboard Navigation: The Complete Web Accessibility Guide.'' [En línea]. Disponible: \url{https://www.levelaccess.com/blog/keyboard-navigation-complete-web-accessibility-guide/}
+\bibitem{ref10} W3C Web Accessibility Initiative (WAI), ``Understanding Success Criterion 2.5.5: Target Size.'' [En línea]. Disponible: \url{https://www.w3.org/WAI/WCAG21/Understanding/target-size.html}
+\bibitem{ref11} W3C Web Accessibility Initiative (WAI), ``Understanding Success Criterion 2.5.1: Pointer Gestures.'' [En línea]. Disponible: \url{https://www.w3.org/WAI/WCAG21/Understanding/pointer-gestures.html}
+\bibitem{ref12} L. Rello y R. Baeza-Yates, ``Good Fonts for Dyslexia,'' en \textit{Proc. 15th Int. ACM SIGACCESS Conf. Computers and Accessibility (ASSETS)}, 2013, pp. 1--8. [En línea]. Disponible: \url{https://www.researchgate.net/publication/262320823_Good_fonts_for_dyslexia}
+\bibitem{ref13} Y. Inal, S. Shalawadi y E. Papachristos, ``Legally Mandated, but Still Inaccessible: Digital Tensions in Older Adults' Use of Norwegian Web Services,'' en \textit{Adjunct Proc. 14th Nordic Conf. Human-Computer Interaction (NordiCHI '26 Adjunct)}, 2026. [En línea]. Disponible: \url{https://arxiv.org/pdf/2608.12552}
+\bibitem{ref14} W3C WAI, ``Understanding Guideline 2.3: Seizures.'' [En línea]. Disponible: \url{https://www.w3.org/TR/UNDERSTANDING-WCAG20/seizure.html}
+\bibitem{ref15} W3C WAI, ``How People with Disabilities Use the Web: Auditory Disabilities.'' [En línea]. Disponible: \url{https://www.w3.org/WAI/people-use-web/abilities-barriers/auditory/#examples-of-barriers-for-people-with-auditory-disabilities}
+\bibitem{ref16} W3C WAI, ``Understanding Success Criterion 1.1.1: Non-text Content.'' [En línea]. Disponible: \url{https://www.w3.org/WAI/WCAG21/Understanding/non-text-content}
+\bibitem{ref17} WCAG.com, ``How to Write Good Alt Text.'' [En línea]. Disponible: \url{https://wcagc.com/blog/how-to-write-good-alt-text}
+\bibitem{ref18} Section 508, ``Fonts and Typography.'' [En línea]. Disponible: \url{https://www.section508.gov/develop/fonts-typography/}
+\bibitem{ref19} W3C, ``Web Content Accessibility Guidelines (WCAG) 2.2,'' W3C Recommendation, oct. 2023. [En línea]. Disponible: \url{https://www.w3.org/TR/WCAG22/}
+\bibitem{ref20} Google AI for Developers, ``Face landmark detection guide (MediaPipe Tasks).'' [En línea]. Disponible: \url{https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker}
+\end{thebibliography}
+
+\end{document}

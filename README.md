@@ -56,17 +56,17 @@ flowchart LR
 
 ```text
 AurasMatch/
-├── frontend/                       # App Expo (React Native 0.88, Expo Router 58, TypeScript 6)
+├── frontend/                       # App Expo (React Native 0.88.1, Expo Router 58, TypeScript 6)
 │   ├── .env.example                # Plantilla de variables públicas EXPO_PUBLIC_*
 │   ├── package.json
 │   └── src/
 │       ├── app/                    # Rutas: index.tsx (Feed), upload.tsx, profile.tsx, look/[id].tsx, _layout.tsx
-│       ├── components/             # UI modular, modales accesibles, tarjeta LookCard, AssistiveVoiceBar
+│       ├── components/             # UI modular DRY: AccessibleModal, ActionBannerButton, LookMiniCard, LookCard, AssistiveVoiceBar
 │       ├── constants/theme.ts      # Tokens WCAG AA/AAA (Claro, Oscuro, Alto Contraste) y fuentes dislexia
 │       ├── contexts/               # AccessibilityContext, AuthContext, AnalysisLockContext
-│       ├── hooks/                  # Headless Hooks: useFeed, useLookDetail, useUploadLook, useUserProfile
-│       ├── services/               # supabase.ts (cliente, RLS/RPCs, event bus) y r2-storage.ts
-│       ├── types/database.ts       # Esquema tipado de profiles, looks, products y saved_looks
+│       ├── hooks/                  # Headless Hooks (useFeed, useLookDetail, useUploadLook, useUserProfile) + look-action-helpers.ts
+│       ├── services/               # supabase.ts (cliente, applyLookMutationToRow, RLS/RPCs, event bus) y r2-storage.ts
+│       ├── types/database.ts       # Esquema tipado, diccionarios de dominio y regla Anti-IA (isLookHumanApproved < 0.50)
 │       └── utils/                  # a11y-feedback.ts (TTS/háptica), color-names.ts (CIELAB), fuzzy-search.ts (Levenshtein)
 ├── backend/                        # Microservicio FastAPI + MediaPipe + Jev (Google Cloud Run)
 │   ├── app/
@@ -76,8 +76,11 @@ AurasMatch/
 │   ├── Dockerfile
 │   ├── pyproject.toml              # Python >= 3.11, FastAPI, MediaPipe, OpenCV, Supabase, Boto3
 │   └── README.md
-├── docs/                           # Documentación SDD, SQL y Entrega Final
-│   ├── Entrega_Final_AurasMatch.md # Documento técnico consolidado (Fase 3)
+├── docs/                           # Documentación SDD, IEEE, SQL y Entrega Final
+│   ├── Entrega_Final_AurasMatch.md # Documento técnico final (formato IEEE Markdown)
+│   ├── Entrega_Final_AurasMatch.tex# Fuente LaTeX oficial IEEEtran para compilar el PDF de entrega
+│   ├── Presentacion_y_Demo_Fase3.md# Guion de presentación ejecutiva y demo en vivo (10% + mapa 40%)
+│   ├── JUSTIFICACIONES_TECNICAS.md # Decisiones arquitectónicas, DRY, Anti-IA y accesibilidad
 │   ├── supabase-rls-and-rpcs.sql   # Políticas RLS, triggers y RPCs atómicas para Supabase
 │   ├── CONCEPTOS_Y_DEFINICIONES.md # Glosario técnico progresivo
 │   ├── specs/                      # Especificaciones Fase 00 a Fase 09
@@ -153,16 +156,20 @@ docker run -p 8000:8000 --env-file app/core/.env aurasmatch-backend
 ## 5. Resumen de Funcionalidades y Accesibilidad Móvil (WCAG 2.1 / 2.2)
 
 - **Navegación predecible y *Gradual Engagement*:** 3 pestañas (`Feed`, `Subir`, `Usuario`) con bloqueo de navegación durante análisis IA (`AnalysisLockContext`) y exploración pública sin registro obligatorio.
-- **Feed Comunitario con Filtro Triple y Tolerancia a Errores:** solo publicaciones verificadas como humanas (`is_human_verified = true`), búsqueda con distancia de **Levenshtein** + chips predictivos y panel flotante de Filtro Triple (Subcultura × Área Facial × Familia Cromática CIELAB).
-- **Detalle estilo Pinterest y Popups Accesibles:** zoom por botones (`100%` a `350%` en pasos de `50%`), síntesis de voz TTS en español (`expo-speech` / `window.speechSynthesis`), modal Anti-IA de 4 etapas, modal de producto con `accessibilityViewIsModal={true}` y cierre `Escape` en Web, comentarios plegables sin límite de tiempo y mini-feed de looks similares.
-- **Subida con MediaPipe / Jev, Alt-Text Editable y Apelación:** captura por cámara/galería con guía de iluminación modal, borrador persistente sin expiración en `AsyncStorage`, envío JSON Base64 a `POST /analyze-look`, Alt-Text editable generado por IA, fallback de simulación asistida y apelación humana (`appeal_status = 'pending'`).
+- **Feed Comunitario con Filtro Triple y Tolerancia a Errores:** solo publicaciones verificadas como humanas (`is_human_verified = true` y `ai_confidence_score < 0.50` vía `isLookHumanApproved`), búsqueda con distancia de **Levenshtein** + chips predictivos y panel flotante de Filtro Triple (Subcultura × Área Facial × Familia Cromática CIELAB).
+- **Detalle estilo Pinterest y Popups Accesibles:** zoom por botones (`100%` a `350%` en pasos de `50%`), síntesis de voz TTS en español (`expo-speech` / `window.speechSynthesis`), modal Anti-IA de 4 etapas, modal de producto unificado en `AccessibleModal` con `accessibilityViewIsModal={true}` y cierre `Escape` en Web, comentarios plegables sin límite de tiempo y mini-feed de looks similares (`LookMiniCard`).
+- **Subida con MediaPipe / Jev, Alt-Text Editable y Apelación:** captura por cámara/galería (`applyPickedImageAsset`) con guía de iluminación modal, borrador persistente sin expiración en `AsyncStorage`, envío JSON Base64 a `POST /analyze-look`, Alt-Text editable generado por IA, bloqueo estricto de publicación al Feed cuando `ai_confidence_score >= 0.50`, fallback de simulación asistida y apelación humana (`appeal_status = 'pending'`).
 - **Accesibilidad Universal en Perfil (`AccessibilityModal` + `AssistiveVoiceBar`):** temas Claro/Oscuro/Alto Contraste AAA (`21:1`), tipografía para dislexia (`Verdana`/`Arial`/`Courier` + mayor interlineado), escalado hasta `200%` con cambio automático a 1 columna en Feed desde `150%`, reducción de movimiento y barra flotante de comandos asistidos para diversidad motriz (WCAG 2.5.3).
 
 ---
 
-## 6. Documentación Técnica de Referencia
+## 6. Documentación Técnica y Entregables de Fase 3
 
-- **Documento Técnico Final (Fase 3):** [`docs/Entrega_Final_AurasMatch.md`](docs/Entrega_Final_AurasMatch.md)
+- **Repositorio Oficial / Demo Web (si aplica):** `[inserte aqui URL oficial del repositorio y demo pública]`
+- **Documento Técnico Final (Formato IEEE Markdown):** [`docs/Entrega_Final_AurasMatch.md`](docs/Entrega_Final_AurasMatch.md)
+- **Fuente LaTeX Oficial (`IEEEtran`) para exportar PDF:** [`docs/Entrega_Final_AurasMatch.tex`](docs/Entrega_Final_AurasMatch.tex) *(compilar a PDF en `[inserte aqui ruta final /docs/Entrega_Final_AurasMatch.pdf]`)*
+- **Guion de Presentación y Demo en Vivo (10 % + Defensa 40 %):** [`docs/Presentacion_y_Demo_Fase3.md`](docs/Presentacion_y_Demo_Fase3.md)
+- **Justificaciones de Decisiones Técnicas:** [`docs/JUSTIFICACIONES_TECNICAS.md`](docs/JUSTIFICACIONES_TECNICAS.md)
 - **Propuestas y Rúbrica Oficial:** [`projectProposalDocs/`](projectProposalDocs/)
 - **Glosario de Conceptos:** [`docs/CONCEPTOS_Y_DEFINICIONES.md`](docs/CONCEPTOS_Y_DEFINICIONES.md)
 - **Guías y pruebas por fase (01–08):** [`docs/phases/`](docs/phases/)
