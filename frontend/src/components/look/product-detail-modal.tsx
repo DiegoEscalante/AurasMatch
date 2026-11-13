@@ -8,23 +8,21 @@
  */
 
 import React, { useEffect } from 'react';
-import {
-  Image,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { AccessiblePressable } from '@/components/ui/accessible-pressable';
-import { MinTouchTargetSize, Spacing } from '@/constants/theme';
+import { AccessibleModal } from '@/components/ui/accessible-modal';
+import { Spacing } from '@/constants/theme';
 import { useAccessibility } from '@/hooks/use-accessibility';
 import { useTheme } from '@/hooks/use-theme';
-import { FacialRegionKey, ProductRow } from '@/types/database';
-import { announceStatus, triggerHapticFeedback } from '@/utils/a11y-feedback';
+import {
+  COSMETIC_CATEGORY_SHORT_LABELS,
+  CosmeticCategory,
+  FACIAL_REGION_ICONS,
+  FacialRegionKey,
+  ProductRow,
+} from '@/types/database';
+import { announceStatus } from '@/utils/a11y-feedback';
 import {
   computeDeltaE,
   formatAccessibleColorLabel,
@@ -40,22 +38,6 @@ export interface ProductDetailModalProps {
   visible: boolean;
   onClose: () => void;
 }
-
-const CATEGORY_TRANSLATIONS: Record<string, string> = {
-  lipstick: 'Labial',
-  lip_liner: 'Delineador de Labios',
-  eyeshadow: 'Sombras de Ojos',
-  eyeliner: 'Delineador de Ojos',
-  mascara: 'Máscara de Pestañas',
-  eyebrow: 'Lápiz de Cejas',
-};
-
-const REGION_ICONS: Record<FacialRegionKey, string> = {
-  lips: '👄',
-  brows: '✨',
-  eyelids: '👁️',
-  lash_line: '👁️‍🗨️',
-};
 
 export function ProductDetailModal({
   product,
@@ -78,25 +60,12 @@ export function ProductDetailModal({
     }
   }, [visible, product]);
 
-  // Web keyboard Escape listener
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !visible) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [visible, onClose]);
-
   if (!product) return null;
 
   const categoryName =
-    CATEGORY_TRANSLATIONS[product.category] || product.category || 'Cosmético';
+    COSMETIC_CATEGORY_SHORT_LABELS[product.category as CosmeticCategory] ||
+    product.category ||
+    'Cosmético';
 
   const accessibleProductColor = formatAccessibleColorLabel(product.hex_value, categoryName);
   const accessibleDetectedColor = detectedHex
@@ -123,76 +92,27 @@ export function ProductDetailModal({
     }
   }
 
-  const handleClose = () => {
-    triggerHapticFeedback('light');
-    onClose();
-    announceStatus('Diálogo de producto cerrado.');
-  };
-
-  const regionIcon = regionKey ? REGION_ICONS[regionKey] || '✨' : '✨';
+  const regionIcon = regionKey ? FACIAL_REGION_ICONS[regionKey] || '✨' : '✨';
   const displayRegionName = regionLabel || (regionKey ? regionKey.toUpperCase() : 'Zona Facial');
 
   return (
-    <Modal
+    <AccessibleModal
       visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={handleClose}
-      accessibilityViewIsModal={true}
+      onClose={onClose}
+      eyebrow={(product.brand || 'AurasMatch').toUpperCase()}
+      title={product.product_name}
+      dialogLabel={`Detalles del cosmético: ${product.product_name}`}
+      closeButtonLabel="Cerrar detalles del producto"
+      closeButtonHint="Cierra esta ventana y regresa al detalle del look"
+      closeAnnouncement="Diálogo de producto cerrado."
+      backdropLabel="Cerrar ventana de detalles"
+      maxWidth={500}
+      size="tall"
+      cardBackgroundColor={theme.backgroundElement}
+      primaryActionLabel="Entendido"
+      primaryActionA11yLabel="Entendido, cerrar detalles"
+      scrollContentContainerStyle={styles.scrollContentOverride}
     >
-      <View style={styles.backdropOverlay}>
-        {/* Dismiss backdrop */}
-        <Pressable
-          style={styles.dismissBackdrop}
-          onPress={handleClose}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar ventana de detalles"
-        />
-
-        {/* Modal Card */}
-        <View
-          style={[
-            styles.modalCard,
-            {
-              backgroundColor: theme.backgroundElement,
-              borderColor: high_contrast ? theme.text : theme.border,
-            },
-          ]}
-          accessible={true}
-          accessibilityLabel={`Detalles del cosmético: ${product.product_name}`}
-          {...(Platform.OS === 'web' ? { role: 'dialog' as const, 'aria-modal': true } : {})}
-        >
-          {/* Header */}
-          <View style={[styles.headerRow, { borderBottomColor: theme.border }]}>
-            <View style={styles.titleWrapper}>
-              <ThemedText style={[styles.brandText, { color: theme.primary }]}>
-                {(product.brand || 'AurasMatch').toUpperCase()}
-              </ThemedText>
-              <ThemedText style={[styles.productName, { color: theme.text }]} numberOfLines={2}>
-                {product.product_name}
-              </ThemedText>
-            </View>
-
-            <AccessiblePressable
-              onPress={handleClose}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar detalles del producto"
-              accessibilityHint="Cierra esta ventana y regresa al detalle del look"
-              style={styles.closeBtn}
-            >
-              <ThemedText style={[styles.closeIcon, { color: theme.textSecondary }]}>
-                ✕
-              </ThemedText>
-            </AccessiblePressable>
-          </View>
-
-          {/* Scrollable Content */}
-          <ScrollView
-            style={styles.scrollArea}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={true}
-            nestedScrollEnabled={true}
-          >
             {/* 1. Facial Region Context Banner (What was previously only shown outside) */}
             <View
               style={[
@@ -476,94 +396,12 @@ export function ProductDetailModal({
                 </View>
               </View>
             </View>
-          </ScrollView>
-
-          {/* Footer Close Button */}
-          <View style={[styles.footerRow, { borderTopColor: theme.border }]}>
-            <AccessiblePressable
-              onPress={handleClose}
-              accessibilityRole="button"
-              accessibilityLabel="Entendido, cerrar detalles"
-              style={[styles.doneBtn, { backgroundColor: theme.primary }]}
-            >
-              <ThemedText style={[styles.doneBtnText, { color: theme.onPrimary }]}>
-                Entendido
-              </ThemedText>
-            </AccessiblePressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    </AccessibleModal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdropOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.two,
-  },
-  dismissBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 500,
-    height: '86%',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 20,
-    display: 'flex',
-    flexDirection: 'column',
-    zIndex: 10,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: Spacing.two,
-    borderBottomWidth: 1,
-  },
-  titleWrapper: {
-    flex: 1,
-    marginRight: Spacing.one,
-  },
-  brandText: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-    marginBottom: 2,
-  },
-  productName: {
-    fontSize: 17,
-    fontWeight: 'bold',
-  },
-  closeBtn: {
-    minWidth: MinTouchTargetSize,
-    minHeight: MinTouchTargetSize,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  closeIcon: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  scrollArea: {
-    flex: 1,
-    width: '100%',
-  },
-  scrollContent: {
+  scrollContentOverride: {
     padding: Spacing.two,
     gap: Spacing.two,
     paddingBottom: Spacing.four,
@@ -733,19 +571,5 @@ const styles = StyleSheet.create({
   },
   cielabDesc: {
     fontSize: 10,
-  },
-  footerRow: {
-    padding: Spacing.two,
-    borderTopWidth: 1,
-  },
-  doneBtn: {
-    minHeight: MinTouchTargetSize,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  doneBtnText: {
-    fontSize: 14,
-    fontWeight: 'bold',
   },
 });

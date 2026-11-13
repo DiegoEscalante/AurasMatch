@@ -15,16 +15,16 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Image,
-  Modal,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ContextualAuthPrompt } from '@/components/auth/contextual-auth-prompt';
+import { ContextualAuthModal } from '@/components/auth/contextual-auth-prompt';
 import { AntiAiTransparencyModal } from '@/components/look/anti-ai-transparency-card';
 import { CommentsSectionCollapsible } from '@/components/look/comments-section-collapsible';
+import { LookMiniCard } from '@/components/look/look-mini-card';
 import { ProductDetailModal } from '@/components/look/product-detail-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -39,6 +39,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { resolveLookImageUrl } from '@/services/supabase';
 import {
   FACIAL_REGIONS,
+  FACIAL_REGION_ICONS,
   FACIAL_REGION_LABELS,
   FacialRegionKey,
   isLookHumanApproved,
@@ -46,13 +47,6 @@ import {
   ProductRow,
 } from '@/types/database';
 import { triggerHapticFeedback } from '@/utils/a11y-feedback';
-
-const REGION_ICONS: Record<FacialRegionKey, string> = {
-  lips: '👄',
-  brows: '✨',
-  eyelids: '👁️',
-  lash_line: '👁️‍🗨️',
-};
 
 export default function LookDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -463,7 +457,7 @@ export default function LookDetailScreen() {
               if (!regionData || !regionData.hex_value) return null;
 
               const regionLabel = FACIAL_REGION_LABELS[regionKey];
-              const regionIcon = REGION_ICONS[regionKey];
+              const regionIcon = FACIAL_REGION_ICONS[regionKey];
               const prods = productsByRegion[regionKey] || [];
 
               return (
@@ -603,43 +597,14 @@ export default function LookDetailScreen() {
 
               <View style={styles.similarGrid}>
                 {similarLooks.map((item) => (
-                  <AccessiblePressable
+                  <LookMiniCard
                     key={item.id}
-                    onPress={() => handleSimilarLookPress(item)}
-                    accessibilityRole="button"
+                    look={item}
+                    onPress={handleSimilarLookPress}
                     accessibilityLabel={`Ver look similar de estilo ${item.subculture.join(
                       ', '
                     )} por @${item.author_username || 'auras'}`}
-                    style={[
-                      styles.similarCard,
-                      {
-                        backgroundColor: theme.backgroundElement,
-                        borderColor: high_contrast ? theme.text : theme.border,
-                      },
-                    ]}
-                  >
-                    <Image
-                      source={{
-                        uri: item.resolved_image_url || resolveLookImageUrl(item.image_path),
-                      }}
-                      style={styles.similarImage}
-                      resizeMode="cover"
-                    />
-                    <View style={styles.similarMeta}>
-                      <ThemedText
-                        style={[styles.similarAuthor, { color: theme.text }]}
-                        numberOfLines={1}
-                      >
-                        @{item.author_username || 'auras'}
-                      </ThemedText>
-                      <ThemedText
-                        style={[styles.similarSubculture, { color: theme.primary }]}
-                        numberOfLines={1}
-                      >
-                        {item.subculture[0] || 'Look'}
-                      </ThemedText>
-                    </View>
-                  </AccessiblePressable>
+                  />
                 ))}
               </View>
             </View>
@@ -668,62 +633,13 @@ export default function LookDetailScreen() {
       />
 
       {/* 9. Contextual Auth Modal for Gradual Engagement */}
-      <Modal
+      <ContextualAuthModal
         visible={showAuthModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowAuthModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalCard,
-              {
-                backgroundColor: theme.background,
-                borderColor: high_contrast ? theme.border : theme.border,
-              },
-            ]}
-          >
-            <View style={styles.modalHeader}>
-              <ThemedText style={[styles.modalTitle, { color: theme.text }]}>
-                Inicia sesión para interactuar
-              </ThemedText>
-              <AccessiblePressable
-                onPress={() => setShowAuthModal(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Cerrar aviso de inicio de sesión"
-                style={styles.modalCloseBtn}
-              >
-                <ThemedText style={[styles.modalCloseText, { color: theme.textSecondary }]}>
-                  ✕
-                </ThemedText>
-              </AccessiblePressable>
-            </View>
-
-            <ContextualAuthPrompt
-              title="Guarda este look y comparte tu aprecio"
-              description="Puedes seguir navegando y explorando cosméticos libremente sin cuenta, pero para guardar publicaciones y dar me gusta necesitas iniciar sesión o registrarte."
-            />
-
-            <AccessiblePressable
-              onPress={() => setShowAuthModal(false)}
-              accessibilityRole="button"
-              accessibilityLabel="Continuar explorando como invitado"
-              style={[
-                styles.continueGuestBtn,
-                {
-                  borderColor: theme.border,
-                  backgroundColor: theme.backgroundElement,
-                },
-              ]}
-            >
-              <ThemedText style={[styles.continueGuestText, { color: theme.text }]}>
-                Continuar explorando como invitado
-              </ThemedText>
-            </AccessiblePressable>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setShowAuthModal(false)}
+        title="Guarda este look y comparte tu aprecio"
+        description="Puedes seguir navegando y explorando cosméticos libremente sin cuenta, pero para guardar publicaciones y dar me gusta necesitas iniciar sesión o registrarte."
+        guestButtonLabel="Continuar explorando como invitado"
+      />
     </ThemedView>
   );
 }
@@ -1025,78 +941,6 @@ const styles = StyleSheet.create({
   similarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.two,
     justifyContent: 'space-between',
-  },
-  similarCard: {
-    width: '48%',
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  similarImage: {
-    width: '100%',
-    height: 140,
-  },
-  similarMeta: {
-    padding: Spacing.one,
-  },
-  similarAuthor: {
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  similarSubculture: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.two,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 480,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    padding: Spacing.two,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.one,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  modalCloseBtn: {
-    minWidth: MinTouchTargetSize,
-    minHeight: MinTouchTargetSize,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalCloseText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  continueGuestBtn: {
-    minHeight: MinTouchTargetSize,
-    borderRadius: 10,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: Spacing.two,
-  },
-  continueGuestText: {
-    fontSize: 13,
-    fontWeight: '600',
   },
 });

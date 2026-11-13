@@ -8,15 +8,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, Share } from 'react-native';
 
+import { runToggleLookLike, runToggleLookSave } from '@/hooks/look-action-helpers';
 import { useAuth } from '@/hooks/use-auth';
 import {
   addCommentToLook,
+  applyLookMutationToRow,
   fetchLookById,
   fetchProductsByIds,
   fetchSimilarLooks,
   subscribeLookDataChanges,
-  toggleLookLike,
-  toggleLookSaved,
 } from '@/services/supabase';
 import { FacialRegionKey, LookCommentItem, LookRow, ProductRow } from '@/types/database';
 import {
@@ -173,59 +173,13 @@ export function useLookDetail(lookId: string): UseLookDetailResult {
 
   useEffect(() => {
     return subscribeLookDataChanges((event) => {
-      if (event.type === 'like' && event.lookId) {
-        setLook((prev) =>
-          prev && prev.id === event.lookId
-            ? {
-                ...prev,
-                liked_by: event.likedBy,
-                is_liked_by_me: currentUserId
-                  ? event.likedBy.includes(currentUserId)
-                  : event.isLiked,
-              }
-            : prev
-        );
+      if (event.type === 'created') return;
+      if (event.lookId === lookId) {
+        setLook((prev) => (prev ? applyLookMutationToRow(prev, event, currentUserId) : prev));
+      }
+      if (event.type === 'like' || event.type === 'save') {
         setSimilarLooks((prev) =>
-          prev.map((item) =>
-            item.id === event.lookId
-              ? {
-                  ...item,
-                  liked_by: event.likedBy,
-                  is_liked_by_me: currentUserId
-                    ? event.likedBy.includes(currentUserId)
-                    : event.isLiked,
-                }
-              : item
-          )
-        );
-      } else if (event.type === 'save' && event.lookId) {
-        setLook((prev) =>
-          prev && prev.id === event.lookId
-            ? { ...prev, is_saved_by_me: event.isSaved }
-            : prev
-        );
-        setSimilarLooks((prev) =>
-          prev.map((item) =>
-            item.id === event.lookId
-              ? { ...item, is_saved_by_me: event.isSaved }
-              : item
-          )
-        );
-      } else if (event.type === 'comment' && event.lookId === lookId) {
-        setLook((prev) =>
-          prev && prev.id === event.lookId ? { ...prev, comments: event.comments } : prev
-        );
-      } else if (event.type === 'description' && event.lookId === lookId) {
-        setLook((prev) =>
-          prev && prev.id === event.lookId
-            ? { ...prev, description: event.description }
-            : prev
-        );
-      } else if (event.type === 'appeal' && event.lookId === lookId) {
-        setLook((prev) =>
-          prev && prev.id === event.lookId
-            ? { ...prev, appeal_status: event.appealStatus }
-            : prev
+          prev.map((item) => applyLookMutationToRow(item, event, currentUserId))
         );
       }
     });
@@ -240,97 +194,41 @@ export function useLookDetail(lookId: string): UseLookDetailResult {
   const likeCount = look?.liked_by?.length || 0;
   const isSaved = Boolean(look?.is_saved_by_me);
 
+  const patchCurrentLook = useCallback((transform: (row: LookRow) => LookRow) => {
+    setLook((prev) => (prev ? transform(prev) : null));
+  }, []);
+
   // Toggle Like directly in Supabase
-  const toggleLike = useCallback(async (): Promise<{ requiresAuth: boolean }> => {
-    if (!isAuthenticated || !currentUserId) {
-      triggerHapticFeedback('light');
-      return { requiresAuth: true };
-    }
-
-    if (!look) return { requiresAuth: false };
-
-    triggerHapticFeedback('medium');
-    setActionErrorMessage(null);
-
-    const previousLiked = isLiked;
-    const previousLikedBy = look.liked_by;
-    const nextLiked = !isLiked;
-    const nextLikedBy = nextLiked
-      ? Array.from(new Set([...look.liked_by, currentUserId]))
-      : look.liked_by.filter((uid) => uid !== currentUserId);
-
-    // Optimistic UI update
-    setLook((prev) => (prev ? { ...prev, is_liked_by_me: nextLiked, liked_by: nextLikedBy } : null));
-
-    try {
-      const result = await toggleLookLike(look.id, currentUserId);
-      setLook((prev) =>
-        prev
-          ? {
-              ...prev,
-              is_liked_by_me: result.isLiked,
-              liked_by: result.likedBy,
-            }
-          : null
-      );
-      announceStatus(
-        result.isLiked ? 'Te gusta esta publicación' : 'Ya no te gusta esta publicación'
-      );
-    } catch (err: any) {
-      // Revert on error
-      setLook((prev) =>
-        prev
-          ? { ...prev, is_liked_by_me: previousLiked, liked_by: previousLikedBy }
-          : null
-      );
-      triggerHapticFeedback('error');
-      const msg =
-        err?.message || 'No se pudo actualizar tu me gusta en la base de datos.';
-      setActionErrorMessage(msg);
-      announceStatus(msg);
-    }
-
-    return { requiresAuth: false };
-  }, [isAuthenticated, currentUserId, look, isLiked]);
+  const toggleLike = useCallback(
+    () =>
+      runToggleLookLike({
+        lookId: look?.id,
+        isAuthenticated,
+        currentUserId,
+        patchLook: patchCurrentLook,
+        setErrorMessage: setActionErrorMessage,
+        trueAnnouncement: 'Te gusta esta publicación',
+        falseAnnouncement: 'Ya no te gusta esta publicación',
+        fallbackErrorMessage: 'No se pudo actualizar tu me gusta en la base de datos.',
+      }),
+    [isAuthenticated, currentUserId, look?.id, patchCurrentLook]
+  );
 
   // Toggle Save directly in Supabase (saved_looks table)
-  const toggleSave = useCallback(async (): Promise<{ requiresAuth: boolean }> => {
-    if (!isAuthenticated || !currentUserId) {
-      triggerHapticFeedback('light');
-      return { requiresAuth: true };
-    }
-
-    if (!look) return { requiresAuth: false };
-
-    triggerHapticFeedback('medium');
-    setActionErrorMessage(null);
-
-    const previousSaved = isSaved;
-    const nextSaved = !isSaved;
-
-    // Optimistic update
-    setLook((prev) => (prev ? { ...prev, is_saved_by_me: nextSaved } : null));
-
-    try {
-      const result = await toggleLookSaved(look.id, currentUserId);
-      setLook((prev) => (prev ? { ...prev, is_saved_by_me: result.isSaved } : null));
-      announceStatus(
-        result.isSaved
-          ? 'Publicación guardada en tu perfil'
-          : 'Publicación eliminada de guardados'
-      );
-    } catch (err: any) {
-      // Revert on error
-      setLook((prev) => (prev ? { ...prev, is_saved_by_me: previousSaved } : null));
-      triggerHapticFeedback('error');
-      const msg =
-        err?.message || 'No se pudo actualizar el guardado en la base de datos.';
-      setActionErrorMessage(msg);
-      announceStatus(msg);
-    }
-
-    return { requiresAuth: false };
-  }, [isAuthenticated, currentUserId, look, isSaved]);
+  const toggleSave = useCallback(
+    () =>
+      runToggleLookSave({
+        lookId: look?.id,
+        isAuthenticated,
+        currentUserId,
+        patchLook: patchCurrentLook,
+        setErrorMessage: setActionErrorMessage,
+        trueAnnouncement: 'Publicación guardada en tu perfil',
+        falseAnnouncement: 'Publicación eliminada de guardados',
+        fallbackErrorMessage: 'No se pudo actualizar el guardado en la base de datos.',
+      }),
+    [isAuthenticated, currentUserId, look?.id, patchCurrentLook]
+  );
 
   // Cross-platform share
   const shareLook = useCallback(async () => {

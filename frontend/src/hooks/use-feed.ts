@@ -7,17 +7,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { runToggleLookLike, runToggleLookSave } from '@/hooks/look-action-helpers';
 import { useAuth } from '@/hooks/use-auth';
 import {
+  applyLookMutationToRow,
   fetchProfileUsernamesMap,
   fetchSavedLookIdsForUser,
   hydrateLookRowFromDb,
   isSupabaseConfigured,
-  REAL_SUPABASE_MIRROR_LOOKS,
   subscribeLookDataChanges,
   supabase,
-  toggleLookLike,
-  toggleLookSaved,
 } from '@/services/supabase';
 import {
   AestheticSubculture,
@@ -174,29 +173,11 @@ export function useFeed(): UseFeedFilterReturn {
         }
       }
 
-      // If empty or offline, use verified mirror looks
-      if (fetchedList.length === 0) {
-        fetchedList = REAL_SUPABASE_MIRROR_LOOKS.filter((l) => l.is_human_verified).map((item) =>
-          hydrateLookRowFromDb(item, {
-            currentUserId,
-            savedLookIds: savedSet,
-            defaultAuthor: 'aurasmatch_bot',
-          })
-        );
-      }
-
       // Randomize the order of publications for a dynamic, exploratory feed
       setLooks(shuffleList(fetchedList));
     } catch {
       setErrorMessage('No se pudieron sincronizar las publicaciones con el servidor.');
-      const fallbackList = REAL_SUPABASE_MIRROR_LOOKS.filter((l) => l.is_human_verified).map((item) =>
-        hydrateLookRowFromDb(item, {
-          currentUserId,
-          savedLookIds: new Set(),
-          defaultAuthor: 'aurasmatch_bot',
-        })
-      );
-      setLooks(shuffleList(fallbackList));
+      setLooks([]);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -216,26 +197,7 @@ export function useFeed(): UseFeedFilterReturn {
       }
 
       setLooks((prev) =>
-        prev.map((item) => {
-          if (item.id !== event.lookId) return item;
-          if (event.type === 'like') {
-            return {
-              ...item,
-              liked_by: event.likedBy,
-              is_liked_by_me: Boolean(currentUserId && event.likedBy.includes(currentUserId)),
-            };
-          }
-          if (event.type === 'save' && event.userId === currentUserId) {
-            return { ...item, is_saved_by_me: event.isSaved };
-          }
-          if (event.type === 'comment') {
-            return { ...item, comments: event.comments };
-          }
-          if (event.type === 'description') {
-            return { ...item, description: event.description };
-          }
-          return item;
-        })
+        prev.map((item) => applyLookMutationToRow(item, event, currentUserId))
       );
     });
   }, [currentUserId, fetchLooks]);
@@ -355,130 +317,37 @@ export function useFeed(): UseFeedFilterReturn {
     });
   }, [looks, selectedSubculture, selectedFacialZone, selectedColorFamily, searchQuery]);
 
+  const patchFeedLook = useCallback(
+    (lookId: string, transform: (row: LookRow) => LookRow) => {
+      setLooks((prev) => prev.map((l) => (l.id === lookId ? transform(l) : l)));
+    },
+    []
+  );
+
   // Direct Database Like Action
   const toggleLike = useCallback(
-    async (lookId: string): Promise<{ requiresAuth: boolean }> => {
-      if (!isAuthenticated || !currentUserId) {
-        triggerHapticFeedback('light');
-        return { requiresAuth: true };
-      }
-
-      setErrorMessage(null);
-      triggerHapticFeedback('medium');
-
-      // Optimistic update
-      setLooks((prev) =>
-        prev.map((l) => {
-          if (l.id !== lookId) return l;
-          const nextLiked = !l.is_liked_by_me;
-          const nextLikedBy = nextLiked
-            ? Array.from(new Set([...l.liked_by, currentUserId]))
-            : l.liked_by.filter((uid) => uid !== currentUserId);
-
-          return {
-            ...l,
-            is_liked_by_me: nextLiked,
-            liked_by: nextLikedBy,
-          };
-        })
-      );
-
-      // Direct update in Supabase
-      try {
-        const res = await toggleLookLike(lookId, currentUserId);
-        setLooks((prev) =>
-          prev.map((l) =>
-            l.id === lookId
-              ? { ...l, is_liked_by_me: res.isLiked, liked_by: res.likedBy }
-              : l
-          )
-        );
-        announceStatus(
-          res.isLiked ? 'Me gusta guardado en la base de datos' : 'Me gusta eliminado de la base de datos'
-        );
-      } catch (err: any) {
-        // Revert on error and surface clear feedback
-        setLooks((prev) =>
-          prev.map((l) => {
-            if (l.id !== lookId) return l;
-            const revertedLiked = !l.is_liked_by_me;
-            const revertedLikedBy = revertedLiked
-              ? Array.from(new Set([...l.liked_by, currentUserId]))
-              : l.liked_by.filter((uid) => uid !== currentUserId);
-
-            return {
-              ...l,
-              is_liked_by_me: revertedLiked,
-              liked_by: revertedLikedBy,
-            };
-          })
-        );
-        const msg = err?.message || 'No se pudo guardar el Me gusta en la base de datos.';
-        setErrorMessage(msg);
-        void triggerHapticFeedback('error');
-        announceStatus(`Error: ${msg}`);
-      }
-
-      return { requiresAuth: false };
-    },
-    [isAuthenticated, currentUserId]
+    (lookId: string) =>
+      runToggleLookLike({
+        lookId,
+        isAuthenticated,
+        currentUserId,
+        patchLook: (transform) => patchFeedLook(lookId, transform),
+        setErrorMessage,
+      }),
+    [isAuthenticated, currentUserId, patchFeedLook]
   );
 
   // Direct Database Save Action
   const toggleSave = useCallback(
-    async (lookId: string): Promise<{ requiresAuth: boolean }> => {
-      if (!isAuthenticated || !currentUserId) {
-        triggerHapticFeedback('light');
-        return { requiresAuth: true };
-      }
-
-      setErrorMessage(null);
-      triggerHapticFeedback('medium');
-
-      // Optimistic update
-      setLooks((prev) =>
-        prev.map((l) => {
-          if (l.id !== lookId) return l;
-          return {
-            ...l,
-            is_saved_by_me: !l.is_saved_by_me,
-          };
-        })
-      );
-
-      // Direct update in Supabase table saved_looks
-      try {
-        const res = await toggleLookSaved(lookId, currentUserId);
-        setLooks((prev) =>
-          prev.map((l) =>
-            l.id === lookId ? { ...l, is_saved_by_me: res.isSaved } : l
-          )
-        );
-        announceStatus(
-          res.isSaved
-            ? 'Publicación guardada en tu perfil'
-            : 'Publicación eliminada de tus guardados'
-        );
-      } catch (err: any) {
-        // Revert on error and surface clear feedback
-        setLooks((prev) =>
-          prev.map((l) => {
-            if (l.id !== lookId) return l;
-            return {
-              ...l,
-              is_saved_by_me: !l.is_saved_by_me,
-            };
-          })
-        );
-        const msg = err?.message || 'No se pudo actualizar Guardados en la base de datos.';
-        setErrorMessage(msg);
-        void triggerHapticFeedback('error');
-        announceStatus(`Error: ${msg}`);
-      }
-
-      return { requiresAuth: false };
-    },
-    [isAuthenticated, currentUserId]
+    (lookId: string) =>
+      runToggleLookSave({
+        lookId,
+        isAuthenticated,
+        currentUserId,
+        patchLook: (transform) => patchFeedLook(lookId, transform),
+        setErrorMessage,
+      }),
+    [isAuthenticated, currentUserId, patchFeedLook]
   );
 
   const dismissError = useCallback(() => {

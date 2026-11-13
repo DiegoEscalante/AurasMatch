@@ -7,11 +7,11 @@
  */
 
 import React from 'react';
-import { Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { AccessiblePressable } from '@/components/ui/accessible-pressable';
-import { MinTouchTargetSize, Spacing } from '@/constants/theme';
+import { AccessibleModal } from '@/components/ui/accessible-modal';
+import { Spacing } from '@/constants/theme';
 import { useAccessibility } from '@/hooks/use-accessibility';
 import { useTheme } from '@/hooks/use-theme';
 import { ANTI_AI_REJECTION_THRESHOLD, isLookHumanApproved } from '@/types/database';
@@ -59,72 +59,20 @@ export function AntiAiTransparencyModal({
       : 92;
 
   return (
-    <Modal
+    <AccessibleModal
       visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={onClose}
+      onClose={onClose}
+      icon="🛡️"
+      title="Verificación Anti-IA"
+      subtitle="Garantía de Realismo Absoluto"
+      dialogLabel="Reporte técnico de verificación Anti-IA"
+      closeButtonLabel="Cerrar ventana de verificación anti-IA"
+      closeAnnouncement="Ventana de verificación anti-IA cerrada."
+      maxWidth={500}
+      size="tall"
+      primaryActionLabel="Entendido"
+      primaryActionA11yLabel="Entendido, cerrar ventana"
     >
-      <View style={styles.modalOverlay}>
-        {/* Backdrop tap to dismiss */}
-        <AccessiblePressable
-          style={styles.backdropDismiss}
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar ventana"
-        />
-
-        {/* Modal Window Card with definite height so ScrollView expands properly */}
-        <View
-          style={[
-            styles.modalContainer,
-            {
-              backgroundColor: theme.background,
-              borderColor: high_contrast ? '#FFFFFF' : theme.border,
-            },
-          ]}
-        >
-          {/* 1. Header with Title and Close Button */}
-          <View
-            style={[
-              styles.modalHeader,
-              {
-                borderBottomColor: theme.border,
-                backgroundColor: theme.backgroundElement,
-              },
-            ]}
-          >
-            <View style={styles.modalHeaderTitleGroup}>
-              <ThemedText style={styles.headerShieldIcon}>🛡️</ThemedText>
-              <View>
-                <ThemedText style={[styles.modalTitle, { color: theme.text }]}>
-                  Verificación Anti-IA
-                </ThemedText>
-                <ThemedText style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
-                  Garantía de Realismo Absoluto
-                </ThemedText>
-              </View>
-            </View>
-
-            <AccessiblePressable
-              onPress={onClose}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar ventana de verificación anti-IA"
-              style={styles.closeBtn}
-            >
-              <ThemedText style={[styles.closeBtnText, { color: theme.textSecondary }]}>
-                ✕
-              </ThemedText>
-            </AccessiblePressable>
-          </View>
-
-          {/* 2. Scrollable Body containing the full technical breakdown */}
-          <ScrollView
-            style={styles.scrollArea}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={true}
-            bounces={true}
-          >
             {/* Realism Guarantee Banner */}
             <View
               style={[
@@ -304,35 +252,7 @@ export function AntiAiTransparencyModal({
                 </View>
               </View>
             </View>
-          </ScrollView>
-
-          {/* 3. Footer with Dismiss Button */}
-          <View
-            style={[
-              styles.modalFooter,
-              {
-                borderTopColor: theme.border,
-                backgroundColor: theme.backgroundElement,
-              },
-            ]}
-          >
-            <AccessiblePressable
-              onPress={onClose}
-              accessibilityRole="button"
-              accessibilityLabel="Entendido, cerrar ventana"
-              style={[
-                styles.dismissBtn,
-                { backgroundColor: theme.primary },
-              ]}
-            >
-              <ThemedText style={[styles.dismissBtnText, { color: theme.onPrimary }]}>
-                Entendido
-              </ThemedText>
-            </AccessiblePressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    </AccessibleModal>
   );
 }
 
@@ -340,80 +260,6 @@ export function AntiAiTransparencyModal({
 export const AntiAiTransparencyCard = AntiAiTransparencyModal;
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.two,
-  },
-  backdropDismiss: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  modalContainer: {
-    width: '100%',
-    maxWidth: 500,
-    height: '84%',
-    maxHeight: 680,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 20,
-    zIndex: 10,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderBottomWidth: 1,
-  },
-  modalHeaderTitleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.one,
-  },
-  headerShieldIcon: {
-    fontSize: 26,
-  },
-  modalTitle: {
-    fontSize: 17,
-    fontWeight: 'bold',
-  },
-  modalSubtitle: {
-    fontSize: 11,
-    marginTop: 1,
-  },
-  closeBtn: {
-    minWidth: MinTouchTargetSize,
-    minHeight: MinTouchTargetSize,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  closeBtnText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  scrollArea: {
-    flex: 1,
-    width: '100%',
-  },
-  scrollContent: {
-    padding: Spacing.three,
-    gap: Spacing.two,
-    paddingBottom: Spacing.four,
-  },
   summaryBanner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -478,19 +324,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginTop: 3,
-  },
-  modalFooter: {
-    padding: Spacing.two,
-    borderTopWidth: 1,
-  },
-  dismissBtn: {
-    minHeight: MinTouchTargetSize,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dismissBtnText: {
-    fontSize: 15,
-    fontWeight: 'bold',
   },
 });

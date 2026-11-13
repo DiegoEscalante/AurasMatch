@@ -7,7 +7,6 @@ import {
   hydrateLookRowFromDb,
   isSupabaseConfigured,
   isValidUuid,
-  REAL_SUPABASE_MIRROR_LOOKS,
   requestLookAppeal,
   subscribeLookDataChanges,
   supabase,
@@ -114,14 +113,7 @@ export function useUserProfile(): UseUserProfileReturn {
         return;
       }
 
-      // Automatic fallback to real mirror rows if offline/unconfigured
-      const fallbackHydrated = REAL_SUPABASE_MIRROR_LOOKS.map((row) =>
-        hydrateLookRowFromDb(row, {
-          currentUserId,
-          savedLookIds: savedSet,
-        })
-      );
-      setAllLooks(fallbackHydrated);
+      setAllLooks([]);
     } catch (err: any) {
       setErrorMessage(
         err?.message ||

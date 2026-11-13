@@ -15,6 +15,7 @@ import { ContextualAuthPrompt } from '@/components/auth/contextual-auth-prompt';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { AccessiblePressable } from '@/components/ui/accessible-pressable';
+import { ActionBannerButton } from '@/components/ui/action-banner-button';
 import { VisualAlertBanner } from '@/components/ui/visual-alert-banner';
 import { AIAnalysisResultsCard } from '@/components/upload/ai-analysis-results-card';
 import { LightingGuideModal } from '@/components/upload/lighting-guide-modal';
@@ -91,8 +92,11 @@ export default function UploadLookScreen() {
         </View>
 
         {/* Lighting Guide Trigger Card (Accessible Popup Modal) */}
-        <AccessiblePressable
-          accessibilityRole="button"
+        <ActionBannerButton
+          icon="💡"
+          title="Guía de Iluminación y Extracción"
+          subtitle="Consejos de luz frontal, ausencia de filtros y rasgos despejados"
+          actionText="Ver guía →"
           accessibilityLabel="Abrir guía de iluminación y recomendaciones para la foto"
           accessibilityHint={
             isAnalyzing
@@ -106,29 +110,7 @@ export default function UploadLookScreen() {
             announceStatus('Abriendo ventana modal de guía de iluminación');
             setShowLightingGuideModal(true);
           }}
-          style={[
-            styles.lightingGuideTrigger,
-            {
-              backgroundColor: theme.backgroundElement,
-              borderColor: theme.border,
-              opacity: isAnalyzing ? 0.45 : 1,
-            },
-          ]}>
-          <View style={styles.lightingGuideLeft}>
-            <ThemedText style={styles.lightingGuideIcon}>💡</ThemedText>
-            <View style={styles.lightingGuideTextCol}>
-              <ThemedText type="smallBold" style={{ color: theme.text }}>
-                Guía de Iluminación y Extracción
-              </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
-                Consejos de luz frontal, ausencia de filtros y rasgos despejados
-              </ThemedText>
-            </View>
-          </View>
-          <ThemedText style={[styles.lightingGuideArrow, { color: theme.primary }]}>
-            Ver guía →
-          </ThemedText>
-        </AccessiblePressable>
+        />
 
         {/* Lighting Guide Popup Modal */}
         <LightingGuideModal
@@ -595,33 +577,6 @@ const styles = StyleSheet.create({
   },
   headerBlock: {
     gap: Spacing.half,
-  },
-  lightingGuideTrigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: Spacing.three,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    minHeight: MinTouchTargetSize,
-    gap: Spacing.two,
-  },
-  lightingGuideLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    flex: 1,
-  },
-  lightingGuideIcon: {
-    fontSize: 22,
-  },
-  lightingGuideTextCol: {
-    flex: 1,
-    gap: 2,
-  },
-  lightingGuideArrow: {
-    fontSize: 13,
-    fontWeight: '700',
   },
   contentFlow: {
     gap: Spacing.four,

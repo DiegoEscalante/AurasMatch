@@ -1,4 +1,3 @@
-import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, View } from 'react-native';
@@ -6,114 +5,22 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ContextualAuthPrompt } from '@/components/auth/contextual-auth-prompt';
 import { AccessibilityModal } from '@/components/accessibility/accessibility-modal';
+import { LookMiniCard } from '@/components/look/look-mini-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { AccessiblePressable } from '@/components/ui/accessible-pressable';
+import { ActionBannerButton } from '@/components/ui/action-banner-button';
 import { VisualAlertBanner } from '@/components/ui/visual-alert-banner';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useAuth } from '@/hooks/use-auth';
 import { ProfileCollectionTab, useUserProfile } from '@/hooks/use-user-profile';
 import { useTheme } from '@/hooks/use-theme';
-import { LookRow } from '@/types/database';
-import { resolveLookImageUrl } from '@/services/supabase';
-import { announceStatus, triggerHapticFeedback } from '@/utils/a11y-feedback';
-
-function ProfileLookMiniCard({
-  look,
-  onAppeal,
-}: {
-  look: LookRow;
-  onAppeal: (id: string) => void;
-}) {
-  const theme = useTheme();
-  const [miniLoading, setMiniLoading] = React.useState(true);
-  const subcultureText =
-    look.subculture.length > 0 ? look.subculture.join(', ') : 'Alternativo';
-
-  const handlePress = () => {
-    triggerHapticFeedback('light');
-    announceStatus(`Abriendo detalles de look de @${look.author_username || 'auras'}`);
-    router.push(`/look/${look.id}` as any);
-  };
-
-  return (
-    <AccessiblePressable
-      onPress={handlePress}
-      accessibilityRole="button"
-      accessibilityLabel={`Ver publicación estilo ${subcultureText} por @${look.author_username || 'auras'}`}
-      accessibilityHint="Toca para abrir los detalles completos del look"
-      style={[
-        styles.miniCard,
-        {
-          backgroundColor: theme.backgroundElement,
-          borderColor: theme.border,
-        },
-      ]}>
-      <View style={styles.miniImageWrapper}>
-        {miniLoading && (
-          <View style={styles.miniLoadingOverlay}>
-            <ActivityIndicator size="small" color={theme.primary} />
-          </View>
-        )}
-        <Image
-          source={{ uri: look.resolved_image_url || resolveLookImageUrl(look.image_path) }}
-          contentFit="cover"
-          style={styles.miniImage}
-          onLoadStart={() => setMiniLoading(true)}
-          onLoad={() => setMiniLoading(false)}
-          onError={() => setMiniLoading(false)}
-          accessibilityLabel={`Fotografía del look ${subcultureText}`}
-        />
-        {!look.is_human_verified && (
-          <View style={[styles.miniBadge, { backgroundColor: 'rgba(239, 68, 68, 0.92)' }]}>
-            <ThemedText style={styles.miniBadgeText}>⚠️ Retenido Anti-IA</ThemedText>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.miniMeta}>
-        <ThemedText style={[styles.miniAuthor, { color: theme.text }]} numberOfLines={1}>
-          @{look.author_username || 'auras'}
-        </ThemedText>
-        <View style={styles.miniSubRow}>
-          <ThemedText style={[styles.miniSubculture, { color: theme.primary }]} numberOfLines={1}>
-            {look.subculture[0] || 'Estilo'}
-          </ThemedText>
-          <ThemedText style={[styles.miniLikes, { color: theme.textSecondary }]}>
-            ❤️ {look.liked_by?.length || 0}
-          </ThemedText>
-        </View>
-      </View>
-
-      {!look.is_human_verified && (
-        <View style={styles.miniAppealBox}>
-          {look.appeal_status === 'pending' ? (
-            <ThemedText style={[styles.miniAppealText, { color: theme.primary }]}>
-              ⏳ En revisión
-            </ThemedText>
-          ) : (
-            <AccessiblePressable
-              accessibilityRole="button"
-              accessibilityLabel="Solicitar apelación humana por sospecha de IA"
-              hapticOnPress="medium"
-              onPress={(e) => {
-                e?.stopPropagation?.();
-                onAppeal(look.id);
-              }}
-              style={[styles.miniAppealBtn, { backgroundColor: theme.warning }]}>
-              <ThemedText style={styles.miniAppealBtnText}>Apelar</ThemedText>
-            </AccessiblePressable>
-          )}
-        </View>
-      )}
-    </AccessiblePressable>
-  );
-}
+import { triggerHapticFeedback } from '@/utils/a11y-feedback';
 
 /**
  * Tab 3: User Profile & Accessibility Settings Screen (`profile.tsx`).
  * Implements:
- * - Unified Accessible Collapsible Menu (`AccessibilitySettingsMenu`) at the top (WCAG 2.4.1 Bypass Blocks).
+ * - Accessible Modal (`AccessibilityModal`) triggered at the top (WCAG 2.4.1 Bypass Blocks).
  * - Gradual Engagement (`ContextualAuthPrompt`): Allows browsing and adjusting accessibility without an account,
  *   and prompts for login/registration to view personal Uploads, Likes, and Saved looks.
  */
@@ -158,38 +65,19 @@ export default function UserProfileScreen() {
           </ThemedText>
         </View>
 
-        {/* 1. Botón de Apertura de Modal de Accesibilidad (reemplaza el menú desplegable duplicado) */}
-        <AccessiblePressable
+        {/* 1. Botón de Apertura de Modal de Accesibilidad */}
+        <ActionBannerButton
+          icon="♿"
+          title="Opciones de Accesibilidad"
+          subtitle="Alto Contraste AAA • Dislexia • Escala • Movimiento"
+          actionText="Configurar ⚙️"
+          accessibilityLabel="Abrir opciones de accesibilidad universal"
+          accessibilityHint="Abre la ventana modal con ajustes de alto contraste, tipografía, tamaño de texto y reducción de movimiento"
           onPress={() => {
             triggerHapticFeedback('light');
             setShowA11yModal(true);
           }}
-          accessibilityRole="button"
-          accessibilityLabel="Abrir opciones de accesibilidad universal"
-          accessibilityHint="Abre la ventana modal con ajustes de alto contraste, tipografía, tamaño de texto y reducción de movimiento"
-          style={[
-            styles.a11yBannerBtn,
-            {
-              backgroundColor: theme.backgroundElement,
-              borderColor: theme.border,
-            },
-          ]}
-        >
-          <View style={styles.a11yBannerLeft}>
-            <ThemedText style={styles.a11yBannerIcon}>♿</ThemedText>
-            <View style={styles.a11yBannerTexts}>
-              <ThemedText type="smallBold" style={{ color: theme.text }}>
-                Opciones de Accesibilidad
-              </ThemedText>
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                Alto Contraste AAA • Dislexia • Escala • Movimiento
-              </ThemedText>
-            </View>
-          </View>
-          <ThemedText style={[styles.a11yBannerChevron, { color: theme.primary }]}>
-            Configurar ⚙️
-          </ThemedText>
-        </AccessiblePressable>
+        />
 
         {/* 2. Gradual Engagement: Si no ha iniciado sesión, pide cuenta aquí; si ya inició, muestra su perfil */}
         {!isAuthenticated || !profile ? (
@@ -355,9 +243,11 @@ export default function UserProfileScreen() {
             ) : (
               <View style={styles.miniGrid}>
                 {activeCollectionLooks.map((look) => (
-                  <ProfileLookMiniCard
+                  <LookMiniCard
                     key={look.id}
                     look={look}
+                    showLikeCount
+                    showAntiAiStatus
                     onAppeal={(id) => void requestHumanAppeal(id)}
                   />
                 ))}
@@ -391,32 +281,6 @@ const styles = StyleSheet.create({
   },
   headerBlock: {
     gap: Spacing.one,
-  },
-  a11yBannerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: Spacing.three,
-    borderRadius: Spacing.two,
-    borderWidth: 1.5,
-  },
-  a11yBannerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    flex: 1,
-  },
-  a11yBannerIcon: {
-    fontSize: 24,
-  },
-  a11yBannerTexts: {
-    flex: 1,
-    gap: 2,
-  },
-  a11yBannerChevron: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginLeft: Spacing.two,
   },
   profileContent: {
     gap: Spacing.three,
@@ -503,89 +367,6 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     justifyContent: 'space-between',
     width: '100%',
-  },
-  miniCard: {
-    width: '48%',
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: 'hidden',
-    marginBottom: Spacing.two,
-  },
-  miniImageWrapper: {
-    width: '100%',
-    height: 145,
-    position: 'relative',
-    backgroundColor: '#1E293B',
-  },
-  miniLoadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1,
-  },
-  miniImage: {
-    width: '100%',
-    height: '100%',
-  },
-  miniBadge: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  miniBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
-  miniMeta: {
-    padding: Spacing.two,
-    gap: 2,
-  },
-  miniAuthor: {
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  miniSubRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  miniSubculture: {
-    fontSize: 11,
-    fontWeight: '600',
-    flex: 1,
-  },
-  miniLikes: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  miniAppealBox: {
-    paddingHorizontal: Spacing.two,
-    paddingBottom: Spacing.two,
-  },
-  miniAppealBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  miniAppealBtnText: {
-    color: '#000000',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  miniAppealText: {
-    fontSize: 10,
-    fontWeight: '600',
-    textAlign: 'center',
   },
 });
 

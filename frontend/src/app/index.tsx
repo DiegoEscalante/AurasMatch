@@ -16,7 +16,6 @@ import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -27,7 +26,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ContextualAuthPrompt } from '@/components/auth/contextual-auth-prompt';
+import { ContextualAuthModal } from '@/components/auth/contextual-auth-prompt';
 import { LookCard } from '@/components/feed/look-card';
 import { TripleFilterDropdown } from '@/components/feed/triple-filter-dropdown';
 import { ThemedText } from '@/components/themed-text';
@@ -410,62 +409,12 @@ export default function FeedHomeScreen() {
       </View>
 
       {/* Gradual Engagement Contextual Auth Modal */}
-      <Modal
+      <ContextualAuthModal
         visible={showAuthModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowAuthModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalCard,
-              {
-                backgroundColor: theme.background,
-                borderColor: high_contrast ? theme.border : theme.border,
-              },
-            ]}
-          >
-            <View style={styles.modalHeader}>
-              <ThemedText style={[styles.modalTitle, { color: theme.text }]}>
-                Inicia sesión para interactuar
-              </ThemedText>
-              <AccessiblePressable
-                onPress={() => setShowAuthModal(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Cerrar aviso de inicio de sesión"
-                style={styles.modalCloseBtn}
-              >
-                <ThemedText style={[styles.modalCloseText, { color: theme.textSecondary }]}>
-                  ✕
-                </ThemedText>
-              </AccessiblePressable>
-            </View>
-
-            <ContextualAuthPrompt
-              title="Guarda tus looks y comparte tu aprecio"
-              description="Puedes seguir navegando y filtrando libremente sin cuenta, pero para guardar publicaciones y dar me gusta necesitas iniciar sesión o registrarte."
-            />
-
-            <AccessiblePressable
-              onPress={() => setShowAuthModal(false)}
-              accessibilityRole="button"
-              accessibilityLabel="Continuar explorando como visitante sin iniciar sesión"
-              style={[
-                styles.continueGuestBtn,
-                {
-                  backgroundColor: theme.backgroundElement,
-                  borderColor: high_contrast ? theme.border : 'transparent',
-                },
-              ]}
-            >
-              <ThemedText style={[styles.continueGuestText, { color: theme.textSecondary }]}>
-                Continuar explorando como visitante
-              </ThemedText>
-            </AccessiblePressable>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setShowAuthModal(false)}
+        title="Guarda tus looks y comparte tu aprecio"
+        description="Puedes seguir navegando y filtrando libremente sin cuenta, pero para guardar publicaciones y dar me gusta necesitas iniciar sesión o registrarte."
+      />
     </ThemedView>
   );
 }
@@ -691,55 +640,5 @@ const styles = StyleSheet.create({
   emptyButtonText: {
     fontSize: 14,
     fontWeight: 'bold',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.two,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 480,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    padding: Spacing.two,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.one,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  modalCloseBtn: {
-    minWidth: MinTouchTargetSize,
-    minHeight: MinTouchTargetSize,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalCloseText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  continueGuestBtn: {
-    minHeight: MinTouchTargetSize,
-    borderRadius: 10,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: Spacing.two,
-  },
-  continueGuestText: {
-    fontSize: 13,
-    fontWeight: '600',
   },
 });

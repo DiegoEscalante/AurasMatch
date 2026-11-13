@@ -14,14 +14,10 @@
  */
 
 import React from 'react';
-import {
-  Modal,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { AccessibleModal } from '@/components/ui/accessible-modal';
 import { AccessiblePressable } from '@/components/ui/accessible-pressable';
 import { MaxContentWidth, MinTouchTargetSize, Spacing } from '@/constants/theme';
 import { useAccessibility } from '@/hooks/use-accessibility';
@@ -69,123 +65,62 @@ export function AccessibilityModal({ visible, onClose }: AccessibilityModalProps
     }
   };
 
-  const handleClose = () => {
-    triggerHapticFeedback('light');
-    announceStatus('Menú modal de accesibilidad cerrado.');
-    onClose();
-  };
+  const syncStatusBanner = (
+    <View
+      style={[
+        styles.syncStatusBanner,
+        {
+          backgroundColor: isAuthenticated
+            ? high_contrast
+              ? '#000000'
+              : '#DCFCE7'
+            : high_contrast
+              ? '#000000'
+              : theme.backgroundElement,
+          borderColor: isAuthenticated
+            ? high_contrast
+              ? '#FFFFFF'
+              : '#86EFAC'
+            : theme.border,
+        },
+      ]}
+    >
+      <ThemedText
+        style={[
+          styles.syncStatusText,
+          {
+            color: isAuthenticated
+              ? high_contrast
+                ? '#FFFFFF'
+                : '#166534'
+              : theme.textSecondary,
+          },
+        ]}
+      >
+        {isAuthenticated && profile
+          ? `✓ Sincronizado en la nube para @${profile.username} (Supabase)`
+          : '💾 Guardado localmente en este dispositivo'}
+      </ThemedText>
+    </View>
+  );
 
   return (
-    <Modal
+    <AccessibleModal
       visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={handleClose}
-      accessibilityViewIsModal={true}
+      onClose={onClose}
+      icon="♿"
+      title="Accesibilidad Universal"
+      subtitle="Estándar W3C WAI-ARIA • Diálogo Modal"
+      dialogLabel="Diálogo Modal de Accesibilidad"
+      closeButtonLabel="Cerrar diálogo de accesibilidad"
+      closeAnnouncement="Menú modal de accesibilidad cerrado."
+      backdropLabel="Cerrar menú de accesibilidad"
+      maxWidth={MaxContentWidth}
+      size="tall"
+      topBanner={syncStatusBanner}
+      primaryActionLabel="Guardar y Cerrar"
+      primaryActionA11yLabel="Guardar cambios y cerrar ventana de accesibilidad"
     >
-      <View style={styles.modalOverlay}>
-        {/* Backdrop tap to dismiss */}
-        <AccessiblePressable
-          style={styles.backdropDismiss}
-          onPress={handleClose}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar menú de accesibilidad"
-          accessibilityHint="Cierra esta ventana superpuesta y regresa a la pantalla principal"
-        />
-
-        {/* Modal Window Dialog */}
-        <View
-          style={[
-            styles.modalContainer,
-            {
-              backgroundColor: theme.background,
-              borderColor: high_contrast ? '#FFFFFF' : theme.border,
-              maxWidth: MaxContentWidth,
-            },
-          ]}
-          accessible={true}
-          accessibilityRole="none"
-          accessibilityLabel="Diálogo Modal de Accesibilidad"
-        >
-          {/* Header */}
-          <View
-            style={[
-              styles.modalHeader,
-              {
-                borderBottomColor: theme.border,
-                backgroundColor: theme.backgroundElement,
-              },
-            ]}
-          >
-            <View style={styles.modalHeaderTitleGroup}>
-              <ThemedText style={styles.headerIcon}>♿</ThemedText>
-              <View>
-                <ThemedText style={[styles.modalTitle, { color: theme.text }]}>
-                  Accesibilidad Universal
-                </ThemedText>
-                <ThemedText style={[styles.modalSubtitle, { color: theme.textSecondary }]}>
-                  Estándar W3C WAI-ARIA • Diálogo Modal
-                </ThemedText>
-              </View>
-            </View>
-
-            <AccessiblePressable
-              onPress={handleClose}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar diálogo de accesibilidad"
-              style={styles.closeBtn}
-            >
-              <ThemedText style={[styles.closeBtnText, { color: theme.textSecondary }]}>
-                ✕
-              </ThemedText>
-            </AccessiblePressable>
-          </View>
-
-          {/* Database Persistence Status Badge */}
-          <View
-            style={[
-              styles.syncStatusBanner,
-              {
-                backgroundColor: isAuthenticated
-                  ? high_contrast
-                    ? '#000000'
-                    : '#DCFCE7'
-                  : high_contrast
-                    ? '#000000'
-                    : theme.backgroundElement,
-                borderColor: isAuthenticated
-                  ? high_contrast
-                    ? '#FFFFFF'
-                    : '#86EFAC'
-                  : theme.border,
-              },
-            ]}
-          >
-            <ThemedText
-              style={[
-                styles.syncStatusText,
-                {
-                  color: isAuthenticated
-                    ? high_contrast
-                      ? '#FFFFFF'
-                      : '#166534'
-                    : theme.textSecondary,
-                },
-              ]}
-            >
-              {isAuthenticated && profile
-                ? `✓ Sincronizado en la nube para @${profile.username} (Supabase)`
-                : '💾 Guardado localmente en este dispositivo'}
-            </ThemedText>
-          </View>
-
-          {/* Scrollable Settings Body */}
-          <ScrollView
-            style={styles.scrollArea}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={true}
-            nestedScrollEnabled={true}
-          >
             {/* 1. Tema y Alto Contraste */}
             <View style={styles.controlSection}>
               <ThemedText type="smallBold" style={{ color: theme.text, marginBottom: 6 }}>
@@ -395,104 +330,11 @@ export function AccessibilityModal({ visible, onClose }: AccessibilityModalProps
                 </ThemedText>
               </AccessiblePressable>
             </View>
-          </ScrollView>
-
-          {/* Modal Action Footer */}
-          <View
-            style={[
-              styles.modalFooter,
-              {
-                borderTopColor: theme.border,
-                backgroundColor: theme.backgroundElement,
-              },
-            ]}
-          >
-            <AccessiblePressable
-              onPress={handleClose}
-              accessibilityRole="button"
-              accessibilityLabel="Guardar cambios y cerrar ventana de accesibilidad"
-              style={[
-                styles.saveCloseBtn,
-                {
-                  backgroundColor: theme.primary,
-                  borderColor: high_contrast ? '#FFFFFF' : 'transparent',
-                },
-              ]}
-            >
-              <ThemedText style={[styles.saveCloseBtnText, { color: theme.onPrimary }]}>
-                Guardar y Cerrar
-              </ThemedText>
-            </AccessiblePressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    </AccessibleModal>
   );
 }
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.two,
-  },
-  backdropDismiss: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  modalContainer: {
-    width: '100%',
-    maxHeight: '85%',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  modalHeaderTitleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    flex: 1,
-  },
-  headerIcon: {
-    fontSize: 24,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  modalSubtitle: {
-    fontSize: 11,
-    fontStyle: 'italic',
-  },
-  closeBtn: {
-    minHeight: MinTouchTargetSize,
-    minWidth: MinTouchTargetSize,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: Spacing.one,
-  },
-  closeBtnText: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
   syncStatusBanner: {
     paddingHorizontal: Spacing.three,
     paddingVertical: 6,
@@ -502,13 +344,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     textAlign: 'center',
-  },
-  scrollArea: {
-    flexGrow: 1,
-  },
-  scrollContent: {
-    padding: Spacing.three,
-    gap: Spacing.two,
   },
   controlSection: {
     marginBottom: Spacing.two,
@@ -553,22 +388,5 @@ const styles = StyleSheet.create({
   resetBtnText: {
     fontSize: 13,
     fontWeight: '600',
-  },
-  modalFooter: {
-    padding: Spacing.two,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-  },
-  saveCloseBtn: {
-    width: '100%',
-    minHeight: MinTouchTargetSize,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveCloseBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
   },
 });

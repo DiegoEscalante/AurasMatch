@@ -4,7 +4,9 @@ import { StyleSheet, View } from 'react-native';
 import { AuthCard } from '@/components/auth/auth-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { AccessibleModal } from '@/components/ui/accessible-modal';
+import { AccessiblePressable } from '@/components/ui/accessible-pressable';
+import { MinTouchTargetSize, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export interface ContextualAuthPromptProps {
@@ -16,6 +18,12 @@ export interface ContextualAuthPromptProps {
    * Clear explanation of what the user unlocks after signing in (Gradual Engagement).
    */
   description: string;
+}
+
+export interface ContextualAuthModalProps extends ContextualAuthPromptProps {
+  visible: boolean;
+  onClose: () => void;
+  guestButtonLabel?: string;
 }
 
 /**
@@ -45,6 +53,53 @@ export function ContextualAuthPrompt({
   );
 }
 
+/**
+ * Reusable modal version of ContextualAuthPrompt backed by AccessibleModal,
+ * shared by the Feed (`index.tsx`) and Look Detail (`look/[id].tsx`) screens.
+ */
+export function ContextualAuthModal({
+  visible,
+  onClose,
+  title,
+  description,
+  guestButtonLabel = 'Continuar explorando como visitante',
+}: ContextualAuthModalProps) {
+  const theme = useTheme();
+
+  return (
+    <AccessibleModal
+      visible={visible}
+      onClose={onClose}
+      title="Inicia sesión para interactuar"
+      dialogLabel="Aviso de inicio de sesión"
+      closeButtonLabel="Cerrar aviso de inicio de sesión"
+      closeAnnouncement="Aviso de inicio de sesión cerrado."
+      maxWidth={480}
+      size="auto"
+      footer={
+        <AccessiblePressable
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel={guestButtonLabel}
+          style={[
+            styles.continueGuestBtn,
+            {
+              backgroundColor: theme.background,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          <ThemedText style={[styles.continueGuestText, { color: theme.textSecondary }]}>
+            {guestButtonLabel}
+          </ThemedText>
+        </AccessiblePressable>
+      }
+    >
+      <ContextualAuthPrompt title={title} description={description} />
+    </AccessibleModal>
+  );
+}
+
 const styles = StyleSheet.create({
   wrapper: {
     gap: Spacing.three,
@@ -55,5 +110,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: Spacing.one,
   },
+  continueGuestBtn: {
+    minHeight: MinTouchTargetSize,
+    borderRadius: 10,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.two,
+  },
+  continueGuestText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });
-

@@ -148,6 +148,41 @@ export function notifyLookDataChanged(event: LookMutationEvent): void {
   });
 }
 
+/**
+ * Pure helper to apply an emitted `LookMutationEvent` to an existing `LookRow`
+ * without duplicating switch/if logic across Feed and Look Detail hooks.
+ */
+export function applyLookMutationToRow(
+  row: LookRow,
+  event: LookMutationEvent,
+  currentUserId?: string | null
+): LookRow {
+  if (event.type === 'created' || row.id !== event.lookId) {
+    return row;
+  }
+
+  switch (event.type) {
+    case 'like':
+      return {
+        ...row,
+        liked_by: event.likedBy,
+        is_liked_by_me: Boolean(currentUserId && event.likedBy.includes(currentUserId)),
+      };
+    case 'save':
+      return event.userId === currentUserId
+        ? { ...row, is_saved_by_me: event.isSaved }
+        : row;
+    case 'comment':
+      return { ...row, comments: event.comments };
+    case 'description':
+      return { ...row, description: event.description };
+    case 'appeal':
+      return { ...row, appeal_status: event.appealStatus };
+    default:
+      return row;
+  }
+}
+
 function isRpcMissingError(error: { code?: string; message?: string } | null | undefined): boolean {
   if (!error) return false;
   const code = String(error.code || '');
@@ -269,11 +304,9 @@ export function resolveProductImageUrl(imageUrl?: string | null): string {
 }
 
 /**
- * Mirror records kept empty to guarantee that all feed publications originate
- * strictly and dynamically from your live Supabase database (`looks`).
+ * Offline product mirror used exclusively as fallback when `fetchProductsByIds`
+ * cannot reach Supabase (for example, during offline Assisted Simulation mode).
  */
-export const REAL_SUPABASE_MIRROR_LOOKS: LookRow[] = [];
-
 export const REAL_SUPABASE_MIRROR_PRODUCTS: Record<number, ProductRow> = {
   1: {
     id: 1,
@@ -745,19 +778,7 @@ export async function fetchLookById(
     }
   }
 
-  // Fallback mirror search
-  const found = REAL_SUPABASE_MIRROR_LOOKS.find((item) => item.id === lookId);
-  if (!found) return null;
-
-  return {
-    ...found,
-    resolved_image_url: resolveLookImageUrl(found.image_path, found.id),
-    is_liked_by_me: Boolean(currentUserId && found.liked_by.includes(currentUserId)),
-    is_saved_by_me: false,
-    description: found.description,
-    appeal_status: found.appeal_status || 'none',
-    comments: found.comments || [],
-  };
+  return null;
 }
 
 /**
@@ -932,25 +953,7 @@ export async function fetchSimilarLooks(
     }
   }
 
-  // Fallback mirror search
-  const candidates = REAL_SUPABASE_MIRROR_LOOKS.filter(
-    (item) => item.is_human_verified && item.id !== currentLook.id
-  );
-
-  const sorted = candidates.sort((a, b) => {
-    const aMatch = (a.subculture || []).some((s) => (subcultures as string[]).includes(s));
-    const bMatch = (b.subculture || []).some((s) => (subcultures as string[]).includes(s));
-    if (aMatch && !bMatch) return -1;
-    if (!aMatch && bMatch) return 1;
-    return 0;
-  });
-
-  return sorted.slice(0, limit).map((item) => ({
-    ...item,
-    resolved_image_url: resolveLookImageUrl(item.image_path, item.id),
-    is_liked_by_me: Boolean(currentUserId && item.liked_by.includes(currentUserId)),
-    is_saved_by_me: false,
-  }));
+  return [];
 }
 
 /**

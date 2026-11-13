@@ -27,6 +27,20 @@ export const FACIAL_REGION_LABELS: Record<FacialRegionKey, string> = {
   lash_line: 'Línea de Pestañas / Delineado',
 };
 
+export const FACIAL_REGION_COMPACT_LABELS: Record<FacialRegionKey, string> = {
+  lips: 'Labios',
+  brows: 'Cejas',
+  eyelids: 'Párpados',
+  lash_line: 'Delineado',
+};
+
+export const FACIAL_REGION_ICONS: Record<FacialRegionKey, string> = {
+  lips: '👄',
+  brows: '✨',
+  eyelids: '👁️',
+  lash_line: '👁️‍🗨️',
+};
+
 /**
  * The 6 cosmetic SKU categories in `public.products`.
  */
@@ -45,6 +59,15 @@ export const COSMETIC_CATEGORY_LABELS: Record<CosmeticCategory, string> = {
   eyeshadow: 'Sombra de Ojos (Eyeshadow)',
   eyeliner: 'Delineador de Ojos (Eyeliner)',
   mascara: 'Pestañina / Rímel (Mascara)',
+};
+
+export const COSMETIC_CATEGORY_SHORT_LABELS: Record<CosmeticCategory, string> = {
+  lipstick: 'Labial',
+  lip_liner: 'Delineador de Labios',
+  eyebrow: 'Lápiz de Cejas',
+  eyeshadow: 'Sombras de Ojos',
+  eyeliner: 'Delineador de Ojos',
+  mascara: 'Máscara de Pestañas',
 };
 
 export interface ExtractedRegionDetail {

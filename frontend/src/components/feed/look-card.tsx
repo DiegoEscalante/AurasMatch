@@ -24,20 +24,13 @@ import { AccessiblePressable } from '@/components/ui/accessible-pressable';
 import { MinTouchTargetSize, Spacing } from '@/constants/theme';
 import { useAccessibility } from '@/hooks/use-accessibility';
 import { useTheme } from '@/hooks/use-theme';
-import { FACIAL_REGION_LABELS, FacialRegionKey, LookRow } from '@/types/database';
+import { FACIAL_REGION_COMPACT_LABELS, FacialRegionKey, LookRow } from '@/types/database';
 import {
   announceStatus,
   speakDescription,
   stopSpeaking,
   triggerHapticFeedback,
 } from '@/utils/a11y-feedback';
-
-const COMPACT_FACIAL_REGION_LABELS: Record<string, string> = {
-  lips: 'Labios',
-  brows: 'Cejas',
-  eyelids: 'Párpados',
-  lash_line: 'Delineado',
-};
 
 export interface LookCardProps {
   look: LookRow;
@@ -266,7 +259,7 @@ export function LookCard({
                 .slice(0, 4)
                 .map(
                   ([zone, detail]) =>
-                    `${COMPACT_FACIAL_REGION_LABELS[zone] || zone} tono ${detail.hex_value}`
+                    `${FACIAL_REGION_COMPACT_LABELS[zone as FacialRegionKey] || zone} tono ${detail.hex_value}`
                 )
                 .join(', ')}. Toca para ver el desglose completo.`}
             >

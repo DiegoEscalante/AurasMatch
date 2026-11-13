@@ -342,6 +342,23 @@ export function useUploadLook(): UseUploadLookResult {
     await discardDraft();
   }, [discardDraft]);
 
+  const applyPickedImageAsset = useCallback(
+    async (asset: ImagePicker.ImagePickerAsset, announcement: string) => {
+      const mime = asset.mimeType || 'image/jpeg';
+      setImageUri(asset.uri);
+      setImageMimeType(mime);
+      setImageBase64(asset.base64 ? `data:${mime};base64,${asset.base64}` : null);
+      setAnalysisResult(null);
+      setAltTextState('');
+      setSuggestedAltText('');
+      setStatus('ready_to_analyze');
+      triggerHapticFeedback('medium');
+      announceStatus(announcement);
+      await saveDraftLocally(asset.uri, mime, null, '', 'none');
+    },
+    [saveDraftLocally]
+  );
+
   // Gallery Picker
   const pickImageFromGallery = useCallback(async () => {
     setErrorMessage(null);
@@ -358,27 +375,16 @@ export function useUploadLook(): UseUploadLookResult {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setImageUri(asset.uri);
-        setImageMimeType(asset.mimeType || 'image/jpeg');
-        if (asset.base64) {
-          setImageBase64(`data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`);
-        } else {
-          setImageBase64(null);
-        }
-        setAnalysisResult(null);
-        setAltTextState('');
-        setSuggestedAltText('');
-        setStatus('ready_to_analyze');
-        triggerHapticFeedback('medium');
-        announceStatus('Imagen seleccionada de la galería. Lista para analizar.');
-        await saveDraftLocally(asset.uri, asset.mimeType || 'image/jpeg', null, '', 'none');
+        await applyPickedImageAsset(
+          result.assets[0],
+          'Imagen seleccionada de la galería. Lista para analizar.'
+        );
       }
     } catch (err: any) {
       setErrorMessage(`Error al abrir la galería: ${err?.message || 'Permiso denegado'}`);
       triggerHapticFeedback('error');
     }
-  }, [saveDraftLocally]);
+  }, [applyPickedImageAsset]);
 
   // Camera Capture
   const takePhotoWithCamera = useCallback(async () => {
@@ -402,27 +408,16 @@ export function useUploadLook(): UseUploadLookResult {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setImageUri(asset.uri);
-        setImageMimeType(asset.mimeType || 'image/jpeg');
-        if (asset.base64) {
-          setImageBase64(`data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`);
-        } else {
-          setImageBase64(null);
-        }
-        setAnalysisResult(null);
-        setAltTextState('');
-        setSuggestedAltText('');
-        setStatus('ready_to_analyze');
-        triggerHapticFeedback('medium');
-        announceStatus('Foto capturada con la cámara. Lista para analizar.');
-        await saveDraftLocally(asset.uri, asset.mimeType || 'image/jpeg', null, '', 'none');
+        await applyPickedImageAsset(
+          result.assets[0],
+          'Foto capturada con la cámara. Lista para analizar.'
+        );
       }
     } catch (err: any) {
       setErrorMessage(`Error al abrir la cámara: ${err?.message || 'Error de hardware'}`);
       triggerHapticFeedback('error');
     }
-  }, [saveDraftLocally]);
+  }, [applyPickedImageAsset]);
 
   // Execute Analysis with Cloud Run FastAPI `/analyze-look` (or fallback `/analyze-look/upload`)
   const analyzeLook = useCallback(async () => {
